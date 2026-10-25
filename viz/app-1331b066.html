@@ -1,0 +1,179 @@
+<style>
+#anime-map .legend { display:flex; flex-wrap:wrap; gap:14px; font-size:12px; color:var(--muted-foreground); margin-bottom:10px; }
+#anime-map .dot { display:inline-block; width:8px; height:8px; border-radius:50%; margin-right:5px; vertical-align:baseline; }
+#anime-map svg { display:block; width:100%; height:auto; overflow:visible; }
+#anime-map .bub { transform-box: fill-box; transform-origin: center; animation: pop .45s cubic-bezier(.2,.8,.3,1) both; cursor:pointer; }
+#anime-map .bub:hover circle { fill-opacity:.72; }
+@keyframes pop { from { opacity:0; transform: scale(.15); } }
+@media (prefers-reduced-motion: reduce) { #anime-map .bub { animation:none; } }
+#anime-map .axis { stroke: var(--border); stroke-width:1; }
+#anime-map .tick { fill: var(--muted-foreground); font-size:11px; }
+#anime-map .zone { fill: var(--muted-foreground); font-size:11px; opacity:.5; letter-spacing:.06em; }
+#anime-map .axlabel { fill: var(--muted-foreground); font-size:11.5px; }
+#anime-map .plabel { font-size:11.5px; fill: var(--foreground); pointer-events:none; }
+#anime-map .sel .plabel { font-weight:700; }
+#anime-map #detail { padding:14px 16px; margin-top:12px; }
+#anime-map #detail h3 { margin:0; font-size:15px; font-weight:600; }
+#anime-map #detail .cat { font-size:11.5px; color:var(--muted-foreground); }
+#anime-map #detail p { margin:8px 0 0; font-size:13px; line-height:1.65; color:var(--muted-foreground); }
+#anime-map #detail b { color: var(--foreground); font-weight:600; }
+</style>
+<div id="anime-map">
+  <div class="legend">
+    <span><span class="dot" style="background:var(--viz-series-1)"></span>智能分析</span>
+    <span><span class="dot" style="background:var(--viz-series-2)"></span>结构数据</span>
+    <span><span class="dot" style="background:var(--viz-series-3)"></span>众包协作</span>
+    <span><span class="dot" style="background:var(--viz-series-4)"></span>个人工具</span>
+  </div>
+  <div id="map-wrap"></div>
+  <div id="detail" class="card"></div>
+</div>
+<script>
+(function(){
+  var root = document.getElementById('anime-map');
+  var wrap = root.querySelector('#map-wrap');
+  var detail = root.querySelector('#detail');
+  var ns = 'http://www.w3.org/2000/svg';
+
+  var CATS = {
+    tech: { name:'智能分析', color:'var(--viz-series-1)' },
+    data: { name:'结构数据', color:'var(--viz-series-2)' },
+    social: { name:'众包协作', color:'var(--viz-series-3)' },
+    tool: { name:'个人工具', color:'var(--viz-series-4)' }
+  };
+
+  var POINTS = [
+    { id:'sakuga', n:'作画菜单', x:9.3, y:6.4, c:'tech',
+      why:'要视频级镜头切分 + 原画师标注做冷启动，纯人力做不起，视觉模型刚把这道墙推倒。',
+      mvp:'先标 20 部话题番的片段，验证作画党愿不愿为“看片段”买单。' },
+    { id:'trigger', n:'预警时间轴', x:8.9, y:8.4, c:'tech',
+      why:'要逐分钟判断暴力/惊吓/虐心强度，且踩伦理边界，平台方都不愿碰。',
+      mvp:'只做恐怖与虐心两类，人工标 30 部热门番，验证“安利朋友”场景是否真实。' },
+    { id:'heat', n:'高光热力图', x:8.0, y:7.4, c:'social',
+      why:'需要众包上报进度，没数据就没价值，先有鸡先有蛋。',
+      mvp:'播放器端匿名上报，先攒 5 部当季番的曲线。' },
+    { id:'line', n:'台词检索', x:7.4, y:5.4, c:'tech',
+      why:'全番字幕建库长期不划算还要绕版权，语音识别 + 向量检索把成本打下来了。',
+      mvp:'先做 300 部经典番索引，只存时间戳不存视频。' },
+    { id:'party', n:'同步放映间', x:6.5, y:7.8, c:'social',
+      why:'实时同步播放基础设施重、又踩版权；做成社区很容易变成灌水。',
+      mvp:'先做“同集讨论房间”，纯文字 + 时间戳锚点，不同步播放。' },
+    { id:'board', n:'委员会透视', x:9.4, y:4.6, c:'data',
+      why:'要爬财报、披露、BD 销量拼起来才有意义，没人愿意干这种脏活。',
+      mvp:'先给当季 10 部做“谁在出钱”卡片，做成可转载长图。' },
+    { id:'feel', n:'情绪指纹', x:8.3, y:3.5, c:'tech',
+      why:'要把节奏/压抑/烧脑量化成曲线，平台只标类型，用户自己也说不清要什么。',
+      mvp:'先量化节奏密度 + 笑点密度两维，做自然语言检索。' },
+    { id:'stage', n:'演出体检', x:7.1, y:4.2, c:'data',
+      why:'属于影评人手艺，没人当它可标准化。',
+      mvp:'只算镜头时长分布与场景数/分钟，生成每集雷达。' },
+    { id:'route', n:'补番路线', x:6.3, y:2.5, c:'social',
+      why:'路线知识散在贴吧和专栏，被认为“问一下就行”，所以从没被产品化。',
+      mvp:'先做 5 个最乱的系列，路线可被复制和编辑。' },
+    { id:'log', n:'观影履历', x:3.8, y:2.8, c:'tool',
+      why:'Letterboxd 模式大家都知道，动画这边却被做成评分站，体验很薄。',
+      mvp:'一话一条情绪词 + 时间轴，年末生成情绪地图。' }
+  ];
+
+  var selected = 'sakuga';
+  var first = true;
+
+  function el(tag, attrs, parent){
+    var e = document.createElementNS(ns, tag);
+    for (var k in attrs) e.setAttribute(k, attrs[k]);
+    if (parent) parent.appendChild(e);
+    return e;
+  }
+
+  function draw(animate){
+    var w = Math.max(wrap.clientWidth || 0, 680);
+    var h = 400;
+    var padL = 54, padR = 30, padT = 26, padB = 48;
+    var plotW = w - padL - padR;
+    var plotH = h - padT - padB;
+    var X = function(v){ return padL + (v / 10) * plotW; };
+    var Y = function(v){ return padT + (1 - v / 10) * plotH; };
+
+    var svg = document.createElementNS(ns, 'svg');
+    svg.setAttribute('viewBox', '0 0 ' + w + ' ' + h);
+    svg.setAttribute('width', w);
+    svg.setAttribute('height', h);
+
+    el('line', { x1:padL, y1:padT, x2:padL, y2:padT + plotH, class:'axis' }, svg);
+    el('line', { x1:padL, y1:padT + plotH, x2:padL + plotW, y2:padT + plotH, class:'axis' }, svg);
+
+    [0, 5, 10].forEach(function(v){
+      el('text', { x:X(v), y:padT + plotH + 18, 'text-anchor':'middle', class:'tick' }, svg).textContent = v;
+      el('text', { x:padL - 10, y:Y(v) + 4, 'text-anchor':'end', class:'tick' }, svg).textContent = v;
+    });
+
+    el('text', { x:padL + plotW / 2, y:h - 8, 'text-anchor':'middle', class:'axlabel' }, svg)
+      .textContent = '市场空白度　·　← 几乎没人做　　已经打成一团 →';
+
+    var yl = el('text', { x:16, y:padT + plotH / 2, 'text-anchor':'middle', class:'axlabel' }, svg);
+    yl.setAttribute('transform', 'rotate(-90 16 ' + (padT + plotH / 2) + ')');
+    yl.textContent = '落地难度';
+
+    el('text', { x:padL + 12, y:padT + plotH - 14, class:'zone' }, svg).textContent = '机会更大';
+    el('text', { x:padL + plotW - 12, y:padT + 20, 'text-anchor':'end', class:'zone' }, svg).textContent = '又挤又难';
+
+    POINTS.forEach(function(p, i){
+      var g = el('g', { class:'bub' + (selected === p.id ? ' sel' : '') }, svg);
+      if (animate) g.style.animationDelay = (i * 45) + 'ms';
+      else g.style.animation = 'none';
+
+      var on = selected === p.id;
+      var c = el('circle', {
+        cx:X(p.x), cy:Y(p.y), r: on ? 11 : 8.5,
+        'fill-opacity': on ? 1 : .85,
+        stroke: on ? 'var(--foreground)' : 'transparent',
+        'stroke-width': 2
+      }, g);
+      c.style.fill = CATS[p.c].color;
+
+      var right = p.x <= 7.2;
+      var t = el('text', {
+        x: right ? X(p.x) + 15 : X(p.x) - 15,
+        y: Y(p.y) + 4,
+        'text-anchor': right ? 'start' : 'end',
+        class:'plabel'
+      }, g);
+      t.textContent = p.n;
+
+      g.addEventListener('click', function(){
+        if (selected === p.id) return;
+        selected = p.id;
+        draw(false);
+        showDetail();
+      });
+    });
+
+    wrap.innerHTML = '';
+    wrap.appendChild(svg);
+  }
+
+  function showDetail(){
+    var p = null;
+    for (var i = 0; i < POINTS.length; i++) if (POINTS[i].id === selected) p = POINTS[i];
+    var cat = CATS[p.c];
+    detail.innerHTML =
+      '<div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap">' +
+        '<h3>' + p.n + '</h3>' +
+        '<span class="cat"><span class="dot" style="background:' + cat.color + '"></span>' + cat.name + '</span>' +
+      '</div>' +
+      '<p><b>为什么还空着：</b>' + p.why + '</p>' +
+      '<p><b>最小验证：</b>' + p.mvp + '</p>';
+  }
+
+  requestAnimationFrame(function(){
+    draw(true);
+    showDetail();
+  });
+
+  if (window.ResizeObserver) {
+    new ResizeObserver(function(){ draw(false); }).observe(wrap);
+  } else {
+    window.addEventListener('resize', function(){ draw(false); });
+  }
+})();
+</script>

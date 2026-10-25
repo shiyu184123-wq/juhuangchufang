@@ -1,0 +1,278 @@
+<style>
+#rx-app .card { padding: 18px 20px; }
+#rx-app .lead { margin:0 0 16px; font-size:13px; line-height:1.6; color:var(--muted-foreground); }
+#rx-app .qblock { margin-bottom:14px; }
+#rx-app .qtitle { font-size:11.5px; letter-spacing:.08em; color:var(--muted-foreground); margin-bottom:8px; }
+#rx-app .opts { display:flex; flex-wrap:wrap; gap:8px; }
+#rx-app .opt {
+  appearance:none; font-family:inherit; text-align:left; cursor:pointer;
+  display:flex; flex-direction:column; gap:2px;
+  border:1px solid var(--border); background:transparent; color:var(--foreground);
+  border-radius:10px; padding:9px 13px; font-size:13px; line-height:1.35;
+  transition: border-color .15s ease-out, box-shadow .15s ease-out;
+}
+#rx-app .opt:hover { border-color: var(--muted-foreground); }
+#rx-app .opt[aria-pressed="true"] {
+  border-color: var(--primary);
+  box-shadow: inset 0 0 0 1px var(--primary);
+  font-weight: 600;
+}
+#rx-app .od { font-size:10.5px; font-weight:400; color:var(--muted-foreground); letter-spacing:.04em; }
+#rx-app .rx-res {
+  margin-top:18px; padding-top:16px; border-top:1px dashed var(--border);
+  animation: rx-in .32s cubic-bezier(.2,.8,.3,1) both;
+}
+@keyframes rx-in { from { opacity:0; transform: translateY(6px); } }
+@media (prefers-reduced-motion: reduce) { #rx-app .rx-res { animation:none; } }
+#rx-app .rx-top { display:flex; align-items:flex-start; gap:10px; }
+#rx-app .rx-chip {
+  flex:none; font-size:10.5px; letter-spacing:.1em; font-weight:600;
+  color: var(--primary-foreground); background: var(--primary);
+  border-radius:5px; padding:3px 7px; margin-top:2px;
+}
+#rx-app .rx-name { margin:0; font-size:17px; font-weight:600; line-height:1.3; }
+#rx-app .rx-meta { margin-top:3px; font-size:11.5px; color:var(--muted-foreground); }
+#rx-app .rx-why { margin:12px 0 0; padding-left:18px; font-size:13px; line-height:1.65; color:var(--muted-foreground); }
+#rx-app .rx-why li { margin-bottom:3px; }
+#rx-app .rx-plan { margin-top:12px; font-size:13px; line-height:1.6; color:var(--muted-foreground); }
+#rx-app .rx-plan b, #rx-app .rx-start b { color: var(--foreground); font-weight:600; }
+#rx-app .rx-start {
+  margin-top:12px; padding:10px 13px; border-radius:8px;
+  border-left: 3px solid var(--primary);
+  background: color-mix(in oklab, var(--primary) 8%, transparent);
+  font-size:13px; line-height:1.6; color:var(--muted-foreground);
+}
+#rx-app .rx-start b { display:block; margin-bottom:2px; font-size:11px; letter-spacing:.08em; }
+#rx-app .rx-foot { margin-top:14px; font-size:11.5px; color:var(--muted-foreground); opacity:.85; }
+</style>
+<div id="rx-app">
+  <div class="card">
+    <p class="lead">选择你现在的状态和想要的感受，开一张方子。</p>
+
+    <div class="qblock">
+      <div class="qtitle">一 · 你现在是哪种状态</div>
+      <div class="opts" id="mood-opts"></div>
+    </div>
+
+    <div class="qblock">
+      <div class="qtitle">二 · 此刻你想被怎么对待</div>
+      <div class="opts" id="feel-opts"></div>
+    </div>
+
+    <div id="rx-res"></div>
+  </div>
+</div>
+<script>
+(function(){
+  var root = document.getElementById('rx-app');
+  var moodBox = root.querySelector('#mood-opts');
+  var feelBox = root.querySelector('#feel-opts');
+  var resBox = root.querySelector('#rx-res');
+
+  var MOODS = [
+    { id:'sober',   t:'还沉浸在上一部里出不来', d:'贤者时间' },
+    { id:'fatigue', t:'想换口味，但不知道换什么', d:'口味疲劳' },
+    { id:'gap',     t:'很久没看了，不知道现在流行什么', d:'脱档' },
+    { id:'stuck',   t:'列表里有一堆，哪部都提不起劲', d:'启动困难' }
+  ];
+
+  var FEELS = [
+    { id:'heal', t:'想被治愈' },
+    { id:'shock', t:'想被震撼' },
+    { id:'laugh', t:'想笑一下' },
+    { id:'blink', t:'只想放空' },
+    { id:'think', t:'想动动脑子' }
+  ];
+
+  var RX = {
+    'sober-heal': {
+      name:'夏目友人帐', meta:'2008 起 · 六季 · 一集一个故事',
+      why:['贤者时间最怕再接一部长篇大作，这部一集一个故事，随时断随时接。',
+           '它不要求你投入情绪，只要求你在。',
+           '看三集没感觉就停，不会亏。'],
+      plan:'一天一集，睡前看，不用追进度。'
+    },
+    'sober-shock': {
+      name:'虫师', meta:'2005 · 26 集 · 单元剧',
+      why:['你要的不是“更震撼”，是“有余韵”。虫师全是余韵，没有煽情。',
+           '每一集抽出来都是完整的短篇，不给你剧情债。',
+           '画风和音乐本身就是一种镇定。'],
+      plan:'一天一集，白天看，别当睡前故事。'
+    },
+    'sober-laugh': {
+      name:'齐木楠雄的灾难', meta:'2016 · 短篇 · 每集 5 分钟',
+      why:['短平快，笑完就散，不占用你的情绪余额。',
+           '不需要记人名和世界观，随时进场。',
+           '刚好对冲“看完神作后的空”。'],
+      plan:'通勤或吃饭时随手两集，凑够五集会有感觉。'
+    },
+    'sober-blink': {
+      name:'悠哉日常大王', meta:'2013 · 四季 · 乡下日常',
+      why:['零剧情债，你甚至可以听着放空。',
+           '节奏慢到你会开始注意画面里的蝉鸣。',
+           '贤者时间最需要的不是内容，是“允许自己什么都不想”。'],
+      plan:'随便从一季的任意一集开始。'
+    },
+    'sober-think': {
+      name:'奇巧计程车', meta:'2021 · 13 集 · 悬疑',
+      why:['13 集一镜到底的谜题，节奏稳，看完一集不会更累。',
+           '动画造型是动物，但内核是成人向的城市寓言。',
+           '结局回想时会发现自己漏了很多细节——值得重看。'],
+      plan:'一次看两集，别停太久，线索会忘。'
+    },
+
+    'fatigue-heal': {
+      name:'紫罗兰永恒花园', meta:'2018 · 剧场版 + 剧集',
+      why:['如果你一直看战斗和热血，这部是完全不同的“情绪节奏”：把镜头停在表情上。',
+           '单元剧结构，每一集是独立的委托。',
+           '它不是让你燃，是让你静下来。'],
+      plan:'先看一集试试，第一集就是完整的短篇。'
+    },
+    'fatigue-shock': {
+      name:'进击的巨人', meta:'2013 起 · 最终季完结',
+      why:['从“爽番”换到“绝望感”，是换轨而不是加重。',
+           '每一季都在重新定义故事是什么。',
+           '如果你受够了“主角一定赢”，这部正好相反。'],
+      plan:'一季一季看，别跳，信息量很大。'
+    },
+    'fatigue-laugh': {
+      name:'碧蓝之海', meta:'2018 · 12 集 · 大学生活',
+      why:['如果你看多了正经番，这部是对“正经”的解构式搞笑。',
+           '笑点密集到不需要铺垫，第一集就能判断。',
+           '12 集，一周能完。'],
+      plan:'一次看两集，别在吃饭时看。'
+    },
+    'fatigue-blink': {
+      name:'轻音少女', meta:'2009 · 两季 · 放学后茶会',
+      why:['和“日常”完全不同维度的放松——没有剧情，只有时间流逝。',
+           '京都动画的作画本身就很舒服。',
+           '不需要追，随便打开一集。'],
+      plan:'随便一集，配一杯茶。'
+    },
+    'fatigue-think': {
+      name:'心理测量者', meta:'2012 · 22 集 · 反乌托邦',
+      why:['从“看主角变强”换成“看系统如何定义人”。',
+           '每一集都在抛问题，不是给你答案。',
+           '如果你已经腻了热血，这部是给脑子的。'],
+      plan:'一天两集，第一季完结就是一个完整故事。'
+    },
+
+    'gap-heal': {
+      name:'葬送的芙莉莲', meta:'2023 · 28 集 · 近年最高口碑之一',
+      why:['现在入场的最好选择：几乎所有人的“必看”，社群热度很高。',
+           '节奏慢但不闷，一集一个十年。',
+           '不需要补任何前作。'],
+      plan:'一天一集，慢慢看，别赶。'
+    },
+    'gap-shock': {
+      name:'咒术回战', meta:'2020 起 · 当季顶流',
+      why:['想快速“跟上时代”，这是当下讨论度最高的之一。',
+           '作画质量很高，第一集就能抓住人。',
+           '剧情门槛低，不用补前作。'],
+      plan:'先看第一季，作画好的地方可以倒回去看。'
+    },
+    'gap-laugh': {
+      name:'间谍过家家', meta:'2022 起 · 全家欢',
+      why:['零门槛，谁看都不尴尬。',
+           '轻松但制作精良，适合当“重启追番习惯”的第一部。',
+           '最新一季正在更新，能跟上。'],
+      plan:'一天一集，适合和家人一起看。'
+    },
+    'gap-blink': {
+      name:'摇曳露营', meta:'2018 起 · 无压力日常',
+      why:['最没门槛的入门作：没有世界观，没有反派，只有露营。',
+           '看完你会想去山里，这本身就是效果。',
+           '一集二十多分钟，节奏轻松。'],
+      plan:'周末一次看两三集，配热的。'
+    },
+    'gap-think': {
+      name:'迷宫饭', meta:'2024 · 奇幻 + 美食',
+      why:['近年最有意思的设定之一：把“打怪”变成“烹饪”。',
+           '有剧情有笑点，讨论度很高，能跟上当下的话题。',
+           '完全不要求你补前作。'],
+      plan:'一天一集，最好别在饭点看（会饿）。'
+    },
+
+    'stuck-heal': {
+      name:'水星领航员', meta:'2005 起 · 三段式 · 慢节奏',
+      why:['如果你卡在“提不起劲”，需要的不是更刺激，是更慢。',
+           'ARIA 的节奏慢到像在冥想，一集一个短故事。',
+           '看过的人形容它“像被水包围”。'],
+      plan:'睡前看半集，看睡着了也没关系。'
+    },
+    'stuck-shock': {
+      name:'命运石之门', meta:'2011 · 24 集 · 科幻悬疑',
+      why:['公认的“后半夜神作”，但前 12 集劝退了无数人。',
+           '所以它不是给你慢慢开始的，是给你一次性的冲击。',
+           '看完你一定会回去补前面。'],
+      plan:'直接跳到第 12 集，看完再说。',
+      starter:'别从第 1 集开始。直接看第 12 集——看完那一集，你会自己回去补前 11 集。'
+    },
+    'stuck-laugh': {
+      name:'银魂', meta:'2006 起 · 长篇 · 单元剧为主',
+      why:['不需要从头看，不需要记住任何东西。',
+           '随便点开一集就能笑，笑完就关。',
+           '这是对“启动困难”最友好的形态。'],
+      plan:'随便点开一集，笑完就停。',
+      starter:'不用从头看，随便挑一集开始，笑到就赚到。'
+    },
+    'stuck-blink': {
+      name:'孤独摇滚！', meta:'2022 · 12 集 · 音乐',
+      why:['12 集一共不到 5 小时，没有负担。',
+           '节奏轻，情绪轻，画风轻。',
+           '如果你在“想看点什么又不想负责”，这是最合适的。'],
+      plan:'一次看三集，一周能完。',
+      starter:'先看第 1 集就够了，12 集一共 4 小时，随时能停。'
+    },
+    'stuck-think': {
+      name:'攻壳机动队（1995）', meta:'1995 · 剧场版 · 82 分钟',
+      why:['你需要动脑，但又不愿投入 24 集——那就用 82 分钟解决。',
+           '剧场版的好处是：一次看完，不欠进度。',
+           '它是几乎所有赛博朋克作品的上游。'],
+      plan:'找一个完整的 90 分钟，一次看完。'
+    }
+  };
+
+  var mood = 'sober', feel = 'heal';
+
+  function renderOpts(box, list, current, onPick){
+    box.innerHTML = '';
+    list.forEach(function(item){
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'opt';
+      b.setAttribute('aria-pressed', String(current === item.id));
+      b.innerHTML = '<span class="ot">' + item.t + '</span>' +
+                    (item.d ? '<span class="od">' + item.d + '</span>' : '');
+      b.addEventListener('click', function(){ onPick(item.id); });
+      box.appendChild(b);
+    });
+  }
+
+  function renderResult(){
+    var d = RX[mood + '-' + feel];
+    resBox.innerHTML =
+      '<div class="rx-res">' +
+        '<div class="rx-top">' +
+          '<span class="rx-chip">处方</span>' +
+          '<div>' +
+            '<h3 class="rx-name">' + d.name + '</h3>' +
+            '<div class="rx-meta">' + d.meta + '</div>' +
+          '</div>' +
+        '</div>' +
+        '<ul class="rx-why">' + d.why.map(function(w){ return '<li>' + w + '</li>'; }).join('') + '</ul>' +
+        '<div class="rx-plan"><b>怎么看：</b>' + d.plan + '</div>' +
+        (d.starter ? '<div class="rx-start"><b>启动开关</b>' + d.starter + '</div>' : '') +
+        '<div class="rx-foot">三天后回来告诉我看了没——不喜欢就换药，不用重新答题。</div>' +
+      '</div>';
+  }
+
+  function refresh(){
+    renderOpts(moodBox, MOODS, mood, function(id){ mood = id; refresh(); });
+    renderOpts(feelBox, FEELS, feel, function(id){ feel = id; refresh(); });
+    renderResult();
+  }
+
+  refresh();
+})();
+</script>
