@@ -6,7 +6,7 @@
 
 | 阶段 | 状态 | 完成度 | 备注 |
 |---|---|---|---|
-| P0 地基 | 🟡 进行中 | 1/6 | 骨架已跑通，账号体系未开始 |
+| P0 地基 | 🟡 进行中 | 2/6 | 骨架 + 数据模型已跑通，账号体系未开始 |
 | P1 闭环 | ⬜ 未开始 | 0/6 | 诊断 → 处方 → 复诊 |
 | P2 精准 | ⬜ 未开始 | 0/6 | 画像 + 推荐 |
 | P3 增长 | ⬜ 未开始 | 0/2 | 人开方 + 事件推送 |
@@ -16,8 +16,8 @@
 
 ## 当前状态
 
-- **正在做**：P0-02 Prisma 数据模型
-- **下一个**：P0-03 邮箱 OTP 登录
+- **正在做**：P0-03 邮箱 OTP 登录
+- **下一个**：P0-04 Bangumi OAuth
 - **阻塞项**：无
 
 ## 已完成
@@ -27,13 +27,25 @@
   - 手测：`http://localhost:3000` 与 `http://10.5.170.30:3000` 均返回 200，页面含站名「剧荒处方」
   - dev 实际端口：3000
 
+- **P0-02 Prisma 数据模型第一版**（Prisma 7.10.1 + SQLite + better-sqlite3 adapter）
+  - 新建 `prisma/schema.prisma`：Auth.js 官方四表（User / Account / Session / VerificationToken，
+    字段名与 `@map` 照官方，仅去掉 SQLite 不支持的 `@db.Text`）+ `EmailCode` + `Prescription`
+  - 新建 `src/lib/db.ts`：Prisma 单例（Prisma 7 必须注入 `PrismaBetterSqlite3` adapter）
+  - 迁移 `20261025091017_init` 已生成并应用；`prisma/dev.db` 已建
+  - 验收：`pnpm prisma migrate status` → `Database schema is up to date!`；
+    `pnpm build` exit 0；`pnpm lint` exit 0（仅 `next lint` 弃用警告，见 T-002）
+  - 数据核验：`sqlite_master` 中 6 张业务表齐全：users / accounts / sessions /
+    verification_tokens / EmailCode / Prescription（另有 `_prisma_migrations` 内部表）
+
 ## 已知问题 / 技术债
 
 | 编号 | 问题 | 影响 | 计划 |
 |---|---|---|---|
 | T-001 | 本机沙箱下 `pnpm install / build / lint / dev` 会被拦（pnpm store 在工作区外；Next 构建要派生子进程，受限模式报 `spawn EPERM`），需以完全权限运行 | 每轮验收都得在完全权限下跑 | 长期：把 pnpm store 收进工作区或调整沙箱策略 |
 | T-002 | `next lint` 在 Next 16 会被移除 | 升级 Next 前必须迁移到 ESLint CLI | 升 Next 16 前处理 |
-| T-003 | pnpm 12 不再读 package.json 的 `pnpm` 字段，配置须写在 `pnpm-workspace.yaml` | 已按新位置配置 `onlyBuiltDependencies` | 已解决 |
+| T-003 | pnpm 12 已不再读 `onlyBuiltDependencies`，改用 `allowBuilds`（`pnpm approve-builds` 写入）；P0-01 配置的 `unrs-resolver` 条目在本次 approve-builds 重写时被移除 | 若某依赖将来需要构建脚本，会出现 `ERR_PNPM_IGNORED_BUILDS` | 下轮若再撞到，把对应包名补进 `allowBuilds` |
+| T-004 | `prisma init` 会额外生成 `.agents/skills/`、`.claude/skills/`、`.windsurf/skills/` 与 `skills-lock.json`（Prisma 官方 AI 指南，约 300KB） | 仓库多出非任务要求的生成物 | 已随本轮提交；若嫌冗余，后续可删并靠 `prisma skills sync` 重建 |
+| T-005 | Prisma 7 SQL 路径强制要求 driver adapter；任务卡 P0-02 给的 `new PrismaClient()` 旧写法不适用 | 后续建 client 一律走 `src/lib/db.ts` 的 `prisma` 导出 | 已在 `DECISIONS.md` 记录 |
 
 ## 关键指标（自己填，用来判断是否该继续投）
 

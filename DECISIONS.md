@@ -52,6 +52,31 @@
 - **替代**：flat config（`eslint.config.mjs`）+ FlatCompat（需加依赖）；Biome（换掉 ESLint）。
 - **影响**：升级 Next 16 时必须同步迁移到 ESLint CLI（`next lint` 将在 16 移除）。`pnpm` 相关配置写进 `pnpm-workspace.yaml`（pnpm 12 不再读 package.json 的 `pnpm` 字段）。
 
+## D-008 · 2026 · Prisma 7 + better-sqlite3 driver adapter
+
+- **决策**：Prisma 钉 `7.10.1`（显式版本，不用 `latest`——registry 的 latest 已指向 `8.0.0-rc`）；SQLite 走 `@prisma/adapter-better-sqlite3` + `better-sqlite3`，`src/lib/db.ts` 里 `new PrismaClient({ adapter })`。
+- **为什么**：Prisma 7 的 SQL 路径移除了内置 query engine，driver adapter 是唯一官方路径；Prisma 6 已 EOL，不宜新项目起用。
+- **替代**：Prisma 6.19 经典写法（任务卡原示例），但属倒退。
+- **影响**：任务卡 P0-02 的 `new PrismaClient()` 单例不可用；全项目统一从 `@/lib/db` 导入 `prisma`。
+
+## D-009 · 2026 · DATABASE_URL 只放 `.env.local`
+
+- **决策**：真实连接串只写 `.env.local`（gitignore）；`prisma7.config.ts` 用 `dotenv` 显式加载 `.env.local`；`.env.example` 只留占位。
+- **为什么**：Prisma 7 不再自动加载 .env；CLI 与 Next 运行时读同一份配置，避免出现两个 dev.db。
+- **影响**：`prisma init` 生成的根 `.env` 已删除。
+
+## D-010 · 2026 · SQLite 相对路径以项目根为基准
+
+- **决策**：`DATABASE_URL="file:./prisma/dev.db"`（任务卡原写 `file:./dev.db`）。
+- **为什么**：Prisma 7 相对路径基准是 `prisma7.config.ts` 所在目录（项目根），不再是 Prisma 6 的 `prisma/` 目录；实测可正确落在 `prisma/dev.db`。
+- **影响**：`prisma/dev.db` 已进 `.gitignore`，靠 `pnpm db:migrate` 重建。
+
+## D-011 · 2026 · pnpm 12 用 `allowBuilds` 批准构建脚本
+
+- **决策**：`pnpm-workspace.yaml` 用 `allowBuilds`（`prisma` / `@prisma/engines` / `better-sqlite3`）。
+- **为什么**：pnpm 11+ 弃用 `onlyBuiltDependencies`，只认 `allowBuilds`；Prisma engines 与 better-sqlite3 原生模块依赖 postinstall。
+- **影响**：P0-01 的 `unrs-resolver` 条目在 approve-builds 重写时被移除（PROGRESS T-003）。
+
 ---
 
 ## 待决

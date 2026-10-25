@@ -1,0 +1,99 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+// ---------------------------------------------------------------------------
+// Auth.js 官方四表（https://authjs.dev/getting-started/adapters/prisma）
+// 字段名与 @map 严格照官方，adapter 依赖这些名字；仅去掉了 SQLite 不支持的
+// `@db.Text` 原生类型注解。
+// ---------------------------------------------------------------------------
+
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String?   @unique
+  emailVerified DateTime? @map("email_verified")
+  image         String?
+  accounts      Account[]
+  sessions      Session[]
+
+  @@map("users")
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String  @map("user_id")
+  type              String
+  provider          String
+  providerAccountId String  @map("provider_account_id")
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@map("accounts")
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique @map("session_token")
+  userId       String   @map("user_id")
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("sessions")
+}
+
+model VerificationToken {
+  identifier String
+  token      String
+  expires    DateTime
+
+  @@unique([identifier, token])
+  @@map("verification_tokens")
+}
+
+// ---------------------------------------------------------------------------
+// 业务表（P1 用；本轮只建表，不写接口）
+// ---------------------------------------------------------------------------
+
+// 邮箱验证码（Auth.js 的 Email provider 是魔法链接，验证码要自己存）
+model EmailCode {
+  id        String   @id @default(cuid())
+  email     String
+  codeHash  String
+  expiresAt DateTime
+  attempts  Int      @default(0)
+  createdAt DateTime @default(now())
+
+  @@index([email])
+}
+
+// 处方记录（游客也有，用 anonId）
+model Prescription {
+  id        String    @id @default(cuid())
+  userId    String?
+  anonId    String?
+  workKey   String // 种子处方键，如 "sober-heal"
+  source    String    @default("system") // system | user
+  followAt  DateTime? // 复诊时间
+  status    String    @default("issued") // issued | liked | disliked | unseen
+  createdAt DateTime  @default(now())
+
+  @@index([followAt])
+  @@index([anonId])
+}
