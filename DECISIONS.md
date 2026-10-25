@@ -100,6 +100,25 @@
 - **替代**：只在生产环境去掉兜底、开发保留（两套行为、易被误配绕过）；只在启动日志里 warn（照样能跑错库）。
 - **影响**：本地开发必须存在 `.env.local`（模板见 `.env.example`）；CI/部署漏配变量会 fail fast，属预期行为。
 
+## D-014 · 2026 · 验证码登录用 Credentials + JWT session（不落 sessions 表）
+
+- **决策**：P0-03 用 Auth.js `Credentials` provider 承载邮箱验证码登录，session 策略显式设为 `jwt`，
+  不为登录写 `sessions` 表；`users` 表在验证码校验通过时由我们 `upsert`。本轮**不装** `@auth/prisma-adapter`。
+- **为什么**：Auth.js 的 Credentials provider **只支持 JWT session**（官方限制），与 PrismaAdapter 的
+  database session 天然冲突。选 A 是官方唯一支持的路径；备选 B（自己校验验证码再用 Auth.js 手动建 session）
+  要自己重写签发/刷新/注销/CSRF，而 v5 没有公开的"建 session"API，只能碰内部实现，更脆弱也更容易出安全漏洞。
+- **adapter 兼容性（实测，非推测）**：`@auth/prisma-adapter@2.11.3` 的 peerDependencies 为
+  `@prisma/client >=2.26 || >=3 || >=4 || >=5 || >=6`，**不含 7**；且 Prisma 7.10.1 的 `@prisma/client`
+  已是空壳（`default.d.ts` 只有 `export * from '.prisma/client/default'`，而本仓库 `node_modules/.prisma`
+  不存在 —— client 由新 generator 输出到 `src/generated/prisma`），adapter 内的
+  `import type { PrismaClient } from "@prisma/client"` 在类型层解析不出来。故本轮不引入 adapter。
+- **替代**：B（自己签 JWT cookie / 手动建 session）—— 重造轮子；database session + 魔法链接 `Email` provider
+  —— 与产品要的"输 6 位码"交互不符。
+- **影响**：`sessions` 表在 P0-03 为空表（JWT 不落库）；`Account`/`sessions` 相关能力留到 P0-04。
+  P0-04 接 Bangumi OAuth 时需重审：OAuth 可与 jwt 策略共存，但写 `accounts` 表仍要 adapter，
+  届时要么等 adapter 支持 Prisma 7，要么自写一个薄 adapter（Auth.js Adapter 接口约 10 个方法）。
+  JWT 里只放 `sub`（userId）与 email，不放任何敏感数据。
+
 ---
 
 ## 待决

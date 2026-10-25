@@ -6,7 +6,7 @@
 
 | 阶段 | 状态 | 完成度 | 备注 |
 |---|---|---|---|
-| P0 地基 | 🟡 进行中 | 2/6 | 骨架 + 数据模型已跑通（命名已统一），账号体系未开始 |
+| P0 地基 | 🟡 进行中 | 3/6 | 骨架 + 数据模型 + 邮箱验证码登录已跑通，Bangumi OAuth 未开始 |
 | P1 闭环 | ⬜ 未开始 | 0/6 | 诊断 → 处方 → 复诊 |
 | P2 精准 | ⬜ 未开始 | 0/6 | 画像 + 推荐 |
 | P3 增长 | ⬜ 未开始 | 0/2 | 人开方 + 事件推送 |
@@ -16,10 +16,10 @@
 
 ## 当前状态
 
-- **正在做**：P0-03 邮箱 OTP 登录
-- **刚完成**：P0-02 收尾卡（数据库命名统一 snake_case + Prisma 单例加固）
+- **正在做**：无 —— P0-03 已完成并提交，等下一张任务卡
+- **刚完成**：P0-03 邮箱验证码登录（Credentials + JWT session，见 D-014）
 - **下一个**：P0-04 Bangumi OAuth
-- **阻塞项**：无
+- **阻塞项**：无（本地缺 `RESEND_API_KEY`，真实收信与手机真机未验证，见 T-008）
 
 ## 已完成
 
@@ -54,6 +54,24 @@
     `prescriptions` 列为 user_id/anon_id/work_key/follow_at/created_at 均符合预期；
     `pnpm build` exit 0；`pnpm lint` exit 0（仅 `next lint` 弃用警告，见 T-002）
 
+- **P0-03 邮箱验证码登录**（next-auth 5.0.0-beta.32 + resend 6.34.1 + zod 4.6.7）
+  - `src/lib/auth.ts`：Credentials provider + `session.strategy = "jwt"`；校验与建用户都在 `authorize` 里完成，
+    verify 接口用 `signIn("credentials")` 复用同一条路径，保证验证码只被消费一次；失败一律 `null`（不区分码错/过期）
+  - `src/lib/otp.ts`：6 位码存 `<salt>:<sha256>`（每条独立 salt，防 100 万种号码反查）；`timingSafeEqual` 比对；
+    10 分钟过期、连错 5 次即作废；发码限流（同邮箱 60 秒、同 IP 每小时 10 次，内存版）
+  - 三个路由：`/api/auth/otp/send`、`/api/auth/otp/verify`、`/api/auth/[...nextauth]`；
+    页面：`/login`（两步式，`inputMode="numeric"`、按钮 ≥ 44px）、`/me`（显示邮箱 + 退出）
+  - `next.config.ts`：`serverExternalPackages` 放行 better-sqlite3 —— Turbopack 打包原生模块会重写 `__dirname`，
+    运行时找不到 `better_sqlite3.node`（详见 T-007）
+  - 选型：**A（Credentials + JWT）**，不装 `@auth/prisma-adapter`（与 Prisma 7.10.1 不兼容，实测 peer 只到 `@prisma/client >=6`，
+    且 Prisma 7 的 `@prisma/client` 已不导出该类型）—— 完整理由见 DECISIONS D-014
+  - 验收：`scripts/check.ps1`（本机只有 Windows PowerShell，用 `powershell -File` 跑）→ `pnpm build` exit 0、
+    `pnpm lint` 无告警（exit 0）
+  - 接口手测（curl 打真实 dev server）：发码 200 且响应不含码 → 正确码 verify 200 拿到会话 cookie → `/me` 200 显示邮箱 →
+    错码连试 5 次全部 400 且统一提示，第 6 次用真码已失效 → 同邮箱 60 秒内重发 429 → signout 302 后 `/me` 307 回 `/login`
+  - 数据核验：`email_codes.code_hash` = 32 位 hex salt + `:` + 64 位 hex，无明文；`users.email_verified` 已写入
+  - 未做：真实邮件投递、手机真机完整登录（本地无 `RESEND_API_KEY`，见 T-008）
+
 ## 已知问题 / 技术债
 
 | 编号 | 问题 | 影响 | 计划 |
@@ -64,6 +82,9 @@
 | T-004 | `prisma init` 会额外生成 `.agents/skills/`、`.claude/skills/`、`.windsurf/skills/` 与 `skills-lock.json`（Prisma 官方 AI 指南，约 300KB） | 仓库多出非任务要求的生成物 | 已随本轮提交；若嫌冗余，后续可删并靠 `prisma skills sync` 重建 |
 | T-005 | Prisma 7 SQL 路径强制要求 driver adapter；任务卡 P0-02 给的 `new PrismaClient()` 旧写法不适用 | 后续建 client 一律走 `src/lib/db.ts` 的 `prisma` 导出 | 已在 `DECISIONS.md` 记录 |
 | T-006 | 本轮刻意删改已提交的迁移（`20261025091017_init` → `20261025092643_init`，见 D-012） | 其他机器/分支上残留的旧 `prisma/dev.db` 会与迁移记录不匹配 | 换机器时删掉 `prisma/dev.db` 后跑 `pnpm db:migrate` 重建；从此迁移文件只追加不改写 |
+| T-007 | `better-sqlite3` 双版本：项目根是 13.0.3（**未编译出原生 binding**），`@prisma/adapter-better-sqlite3` 内嵌的 12.11.1 才有 `better_sqlite3.node` | 去掉 `next.config.ts` 的 `serverExternalPackages` 后，dev 下任何 DB 调用都报 `Could not locate the bindings file` | 根治：把 `better-sqlite3` 固定到 12.11.1（或 pnpm overrides 统一），再移除 workaround 复测 |
+| T-008 | 本地没有 `RESEND_API_KEY`：开发环境改为"跳过真实发信、把验证码打到服务端日志"，生产仍缺 key 即报错 | 真实邮件送达、手机真机登录未验证 | 要真测时把 key 写进 `.env.local`，先用 `onboarding@resend.dev` 发给自己的注册邮箱 |
+| T-009 | 发码限流是进程内 `Map` | 多实例部署时每个实例各限各的，等于放宽上限 | P0 单实例够用；上多实例前换 Redis 或数据库计数 |
 
 ## 关键指标（自己填，用来判断是否该继续投）
 
