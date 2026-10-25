@@ -35,7 +35,7 @@ export function BottomNav() {
                 // 不只用颜色区分当前页：读屏/高对比度模式下 aria-current 才是可靠信号
                 aria-current={active ? "page" : undefined}
                 className={`flex min-h-[var(--bottom-nav-height)] w-full items-center justify-center text-sm ${
-                  active ? "font-medium text-neutral-900" : "text-neutral-500"
+                  active ? "font-medium text-foreground" : "text-neutral-500"
                 }`}
               >
                 {link.label}

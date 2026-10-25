@@ -226,6 +226,11 @@
     - 留白算式核对：导航条高 = `56px + env(safe-area-inset-bottom)`，外壳底部留白 = `calc(56px + env(safe-area-inset-bottom))`，
       两者共用同一个 `--bottom-nav-height` 变量，所以内容末条不会压在导航下（这条只是算式，真机仍要肉眼看，见 T-012）
     - 残留检查：`src/` 里已无 `min-h-screen` / `100vh`；`position: fixed` 只剩底部导航一处
+  - **深色对比度收尾（D-020 第 4 条的补完）**：`bottom-nav` 当前页高亮原为 `text-neutral-900`（#171717 压在 #0a0a0a 上只有
+    **1.10:1** —— 高亮等于没有，直接违反「深色下文字仍可读」）；`settings` 的 `SECONDARY_BUTTON` 原为 `text-neutral-700`（**1.91:1**）。
+    两处改为语义变量 `text-foreground`（深色 #ededed → **16.91:1**，浅色 #171717 → **17.93:1**），不改配色、不加 `dark:` 成对类名。
+    全仓库 `text-neutral-700/800/900` 已归零（`grep` 复核 0 处）；`text-neutral-500` **保留**（深色 4.18:1，刻意的次要层级，提亮会让层级消失）。
+    另补 `page.tsx` 的文件末尾换行。对比度为 WCAG 公式计算值 + 渲染层 class 复核，**未做浏览器目视截图**（agent 无法操作浏览器）
   - **未做：真机测试**。本轮 agent 碰不到物理手机，六项人工验收一条也没造假 —— 明细与自测步骤见 T-012
 
 ## 已知问题 / 技术债

@@ -34,7 +34,7 @@ const TONE_CLASS: Record<NoticeTone, string> = {
 const PRIMARY_BUTTON =
   "inline-flex min-h-[44px] w-full items-center justify-center rounded-lg bg-neutral-900 px-4 text-base text-white";
 const SECONDARY_BUTTON =
-  "inline-flex min-h-[44px] w-full items-center justify-center rounded-lg border border-neutral-300 px-4 text-base text-neutral-700";
+  "inline-flex min-h-[44px] w-full items-center justify-center rounded-lg border border-neutral-300 px-4 text-base text-foreground";
 
 export default async function SettingsPage({
   searchParams,
