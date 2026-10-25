@@ -9,7 +9,7 @@ export default async function MePage() {
   if (!session?.user?.email) redirect("/login");
 
   return (
-    <main className="mx-auto flex min-h-screen w-full max-w-sm flex-col justify-center gap-6 p-6">
+    <main className="mx-auto flex w-full max-w-sm flex-1 flex-col justify-center gap-6 p-6">
       <header className="space-y-2">
         <h1 className="text-2xl font-semibold tracking-tight">已登录</h1>
         <p className="text-sm text-neutral-500">这是你的账号：</p>
@@ -19,9 +19,13 @@ export default async function MePage() {
         {session.user.email}
       </p>
 
+      {/*
+        手机上这个入口和底部导航的「设置」重复，但底部导航在桌面端是隐藏的（md:hidden），
+        这一条是桌面端进入设置页的唯一路径，所以保留。见 DECISIONS D-019。
+      */}
       <Link
         href="/settings"
-        className="inline-flex min-h-[44px] w-full items-center justify-center rounded-lg border border-neutral-300 px-4 text-base text-neutral-700"
+        className="inline-flex min-h-[44px] w-full items-center justify-center rounded-lg border border-neutral-300 px-4 text-base"
       >
         设置
       </Link>

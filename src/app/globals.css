@@ -3,6 +3,9 @@
 :root {
   --background: #ffffff;
   --foreground: #171717;
+  /* 底部导航的条高（不含安全区）。layout 的底部留白与 bottom-nav 的高度共用这一个值，
+     改一处即可 —— 两处各写一个数字，迟早漂移，内容就会被导航压住。 */
+  --bottom-nav-height: 56px;
 }
 
 @theme inline {
@@ -16,11 +19,38 @@
   :root {
     --background: #0a0a0a;
     --foreground: #ededed;
+    /* 让浏览器把原生控件按深色渲染。缺了这行，深色模式下输入框仍是浅色底、
+       文字却继承浅色 foreground，直接变成白底白字。
+       本轮只保证"可读"，完整的深色主题留到后面。 */
+    color-scheme: dark;
   }
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+@layer base {
+  html,
+  body {
+    /* 移动端最低要求：任何页面都不许横向滚动 */
+    max-width: 100%;
+    overflow-x: hidden;
+  }
+
+  body {
+    background: var(--background);
+    color: var(--foreground);
+    font-family: Arial, Helvetica, sans-serif;
+  }
+
+  /* 触控区下限。放在 base 层，具体元素仍可用工具类覆盖（如 min-h-[56px]）。 */
+  button,
+  a {
+    min-height: 44px;
+  }
+}
+
+/* 键盘焦点必须看得见。刻意写在 layer 之外：
+   login 输入框上的 outline-none 会把 base 层的描边一起压掉，
+   而"Tab 走一遍能看清焦点在哪"是本轮验收项。 */
+:focus-visible {
+  outline: 2px solid var(--foreground);
+  outline-offset: 2px;
 }

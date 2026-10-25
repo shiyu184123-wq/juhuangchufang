@@ -49,7 +49,7 @@ export default async function SettingsPage({
   const card = await getBangumiCard(session.user.id);
 
   return (
-    <main className="mx-auto flex min-h-screen w-full max-w-sm flex-col gap-6 p-6">
+    <main className="mx-auto flex w-full max-w-sm flex-1 flex-col gap-6 p-6">
       <header className="space-y-1">
         <h1 className="text-2xl font-semibold tracking-tight">设置</h1>
         <p className="text-sm text-neutral-500">{session.user.email}</p>
@@ -93,7 +93,7 @@ export default async function SettingsPage({
               </div>
               <div className="flex items-baseline justify-between gap-3">
                 <dt className="text-sm text-neutral-500">唯一 ID</dt>
-                <dd className="truncate text-sm text-neutral-600">@{card.username}</dd>
+                <dd className="truncate text-sm text-neutral-500">@{card.username}</dd>
               </div>
               <div className="flex items-baseline justify-between gap-3">
                 <dt className="text-sm text-neutral-500">收藏总数</dt>
@@ -130,7 +130,11 @@ export default async function SettingsPage({
         )}
       </section>
 
-      <Link href="/me" className="text-center text-sm text-neutral-500 underline">
+      {/* 手机上是多余入口（底部导航有），但桌面端没有底部导航，这条是回到「我的」的路 */}
+      <Link
+        href="/me"
+        className="flex min-h-[44px] items-center justify-center text-sm text-neutral-500 underline"
+      >
         返回我的账号
       </Link>
     </main>

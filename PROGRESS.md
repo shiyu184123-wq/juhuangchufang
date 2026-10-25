@@ -6,7 +6,7 @@
 
 | 阶段 | 状态 | 完成度 | 备注 |
 |---|---|---|---|
-| P0 地基 | 🟡 进行中 | 4/6 | 骨架 + 数据模型 + 验证码登录 + Bangumi 绑定已跑通，剩应用外壳与部署 |
+| P0 地基 | 🟡 进行中 | 5/6 | 骨架 + 数据模型 + 验证码登录 + Bangumi 绑定 + 应用外壳已跑通，只剩部署 |
 | P1 闭环 | ⬜ 未开始 | 0/6 | 诊断 → 处方 → 复诊 |
 | P2 精准 | ⬜ 未开始 | 0/6 | 画像 + 推荐 |
 | P3 增长 | ⬜ 未开始 | 0/2 | 人开方 + 事件推送 |
@@ -16,11 +16,12 @@
 
 ## 当前状态
 
-- **正在做**：无 —— T-007（`better-sqlite3` 版本错配）已修完，等下一张任务卡
-- **刚完成**：T-007 —— `better-sqlite3` 从 `13.0.3` 钉到 `12.11.1`，全仓库只剩一个版本、二进制由包自带
-  （`pnpm install` 一条命令可重建）；`serverExternalPackages` 经 Next 官方文档与内置列表核实**是必需配置，已保留**
-- **下一个**：P0-05 应用外壳（`tasks/P0-05-shell.md`）
-- **阻塞项**：无。只剩 T-010（token 7 天过期需重新授权，未做自动刷新）。
+- **正在做**：无 —— P0-05（应用外壳 + 移动端基线）已做完，等下一张任务卡
+- **刚完成**：P0-05 —— 四个页面（`/` `/login` `/me` `/settings`）有了统一外壳：底部导航（安全区留白、`aria-current`）、
+  `viewport-fit=cover`、`dvh` 高度、横向不溢出、触控区 ≥ 44px、键盘焦点可见、深色模式最小可读。
+  **只做骨架与基线，没有任何视觉设计**
+- **下一个**：P0-06 部署（`tasks/P0-06-deploy.md`）
+- **阻塞项**：无。只剩 T-010（token 7 天过期需重新授权，未做自动刷新）与 T-012（移动端真机验收待人工过一遍）。
   本地起 dev 请用 `pnpm dev:proxy`（否则 Node 直连 bgm.tv 必失败，见 D-016）；`.env.local` 三项凭据已配好
 
 ## 已完成
@@ -187,6 +188,46 @@
     adapter 与 Prisma 版本未变；重绑请在浏览器走一遍 `设置 → 绑定 Bangumi → 同意`，预期落回
     `/settings?bgm=ok` 并显示 `MegumiKT` / 317 条。
 
+- **P0-05 应用外壳与移动端基线**（**只做骨架，未做任何视觉设计**；排版/配色/插画留给后面的设计卡）
+  - `src/components/bottom-nav.tsx`（新文件，`"use client"`）：三个入口 `/` `/me` `/settings`；
+    `fixed` 贴底 + `style="padding-bottom:env(safe-area-inset-bottom)"`；每项 `min-h-[var(--bottom-nav-height)]`（56px）、
+    `text-sm`（14px）、`flex-1` 等分；当前页给 `aria-current="page"` + 加粗（不只靠颜色）；
+    `/` 只在精确匹配时高亮，其余按前缀匹配；`md:hidden`
+  - `src/app/layout.tsx`：新增 `export const viewport: Viewport`（`device-width` / `initialScale: 1` /
+    `viewportFit: "cover"` / `themeColor: "#ffffff"`，类型从 `next` 取，无 `any`）；
+    `children` 包进 `<div className="flex min-h-dvh flex-col pb-[calc(var(--bottom-nav-height)+env(safe-area-inset-bottom))] md:pb-0">`
+    —— 用 `div` 不用 `main`：每个页面自己已有 `<main>`，再套一层就是嵌套 `main`；末尾挂 `<BottomNav />`
+  - 四个页面：`min-h-screen` 一律去掉，改 `flex-1`（高度只由外壳的那个 `min-h-dvh` 决定，避免 100vh 跳动）；
+    首页收成「一句定位文案 + 一个『开始』按钮」，按钮暂时指向 `/login`（诊断路由还没做，见任务卡允许占位）
+  - `src/app/globals.css`：`html, body { max-width: 100%; overflow-x: hidden }`；
+    `button, a { min-height: 44px }`（放 `@layer base`，具体元素仍可用工具类覆盖）；
+    `:focus-visible { outline: 2px solid var(--foreground) }` —— **刻意写在 layer 之外**，
+    login 输入框上的 `outline-none` 会把 base 层的描边一起压掉，而"Tab 走一遍能看清焦点"是验收项；
+    深色模式补 `:root { color-scheme: dark }`（缺这行时原生输入框是浅色底、文字却是继承来的浅色 → 白底白字），
+    并把两处深色下会「暗色压暗色」的硬编码文字色（`/me` 的 `text-neutral-700`、`/settings` 的 `@username` `text-neutral-600`）
+    去掉 / 提亮一档
+  - **两个决策**（都写进 `DECISIONS.md`）：导航 `md:hidden` 且**保留** `/me` 里的「设置」按钮 —— 两件事必须成对，
+    否则桌面端没有进设置页的路径（D-019）；移动端基线四条（`dvh` / 安全区 / 横向溢出 / 深色只做可读）见 D-020
+  - **范围说明**：`src/app/login/page.tsx` 只改了一行 —— `<main>` 的 `min-h-screen` → `flex-1`，表单逻辑（状态机、
+    请求、`router.replace`）一个字没动。任务卡允许修改清单里没有 `login`，但"四页同一套基线"缺了它就不成立；
+    若认为越界，回退这一行不影响其余页面渲染
+  - 验收：`scripts/check.ps1`（本机只有 Windows PowerShell 5.1，`pwsh` 不存在，用 `powershell -NoProfile -File` 跑）
+    → `pnpm build` **exit 0**（11 条路由照常产出）、`pnpm lint` **无告警 exit 0**、脚本结尾 `[通过] 全部验收命令成功`
+  - **产物级核验（不看 className 写没写对，只看构建出来的东西）**：
+    - 构建出的 CSS 里确实有：`padding-bottom:calc(var(--bottom-nav-height) + env(safe-area-inset-bottom))`、
+      `min-height:100dvh`、`@media (min-width:48rem){.md\:hidden{display:none}.md\:pb-0{padding-bottom:0}}`、
+      `button,a{min-height:44px}`、`@layer` 之外的 `:focus-visible`
+    - 四页真实渲染的 HTML（dev server + 走真实验证码登录拿到会话，四个页面全部 200）：
+      `<main>` 每页恰好 1 个（无嵌套）；`<nav aria-label="主导航" class="fixed inset-x-0 bottom-0 z-50 … md:hidden"
+      style="padding-bottom:env(safe-area-inset-bottom)">` 存在；每页恰好 1 个 `aria-current="page"`，且落在正确项
+      （`/`→首页、`/me`→我的、`/settings`→设置）；`/login` 上没有任何一项高亮（正确：它不是导航项）；
+      `<meta name="viewport" content="device-width, initial-scale=1, viewport-fit=cover">` 与
+      `<meta name="theme-color" content="#ffffff">` 均已输出
+    - 留白算式核对：导航条高 = `56px + env(safe-area-inset-bottom)`，外壳底部留白 = `calc(56px + env(safe-area-inset-bottom))`，
+      两者共用同一个 `--bottom-nav-height` 变量，所以内容末条不会压在导航下（这条只是算式，真机仍要肉眼看，见 T-012）
+    - 残留检查：`src/` 里已无 `min-h-screen` / `100vh`；`position: fixed` 只剩底部导航一处
+  - **未做：真机测试**。本轮 agent 碰不到物理手机，六项人工验收一条也没造假 —— 明细与自测步骤见 T-012
+
 ## 已知问题 / 技术债
 
 | 编号 | 问题 | 影响 | 计划 |
@@ -202,6 +243,7 @@
 | T-009 | 发码限流是进程内 `Map` | 多实例部署时每个实例各限各的，等于放宽上限 | P0 单实例够用；上多实例前换 Redis 或数据库计数 |
 | T-010 | Bangumi `access_token` 有效期只有 7 天，本轮**不实现自动刷新**（`refresh_token` / `expires_at` 已存库） | 绑定 7 天后设置页会提示「授权已过期，请重新绑定」，用户每 7 天要重新授权一次 | 接 P2-01 收藏同步时一并做 `grant_type=refresh_token`，在该端点同域名下续期并回写 |
 | T-011 | Node 的 fetch 不读 Windows 系统代理，Node 24 需 `NODE_USE_ENV_PROXY=1` + `HTTPS_PROXY` 才走代理，否则直连 bgm.tv 拿到被污染 DNS 结果并超时 | 本地 dev 必须带代理启动，否则绑定必失败 | **已解决**：`scripts/dev.ps1` 自动读系统代理并设置；生产服务器能直连，不受影响（见 D-016） |
+| T-012 | **P0-05 的移动端验收没在真机上做过**：只核验了构建出的 CSS、四页真实渲染的 HTML 与留白算式，没有在物理手机上点过 | 任务卡要求的六项人工验收**均无真机证据**——① 页面不横向滚动 ② 底部导航不被手势条遮挡 ③ 按钮一次点中（不用点第二下）④ 正文字号 ≥ 14px ⑤ 横屏不崩 ⑥ 深色模式文字可读；`env(safe-area-inset-bottom)` 与 iOS 键盘弹起时 `fixed` 底栏的行为尤其只有真机能验 | 人工过一遍：`pnpm dev:proxy`（端口 3000）→ 手机连同一局域网 → 开 `http://<电脑局域网IP>:3000`（上次为 `10.5.170.30`）。六项逐条记录机型与结果；局域网连不上就**如实写"没验成"**，不要记成通过 |
 
 ## 关键指标（自己填，用来判断是否该继续投）
 

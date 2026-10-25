@@ -72,7 +72,7 @@ export default function LoginPage() {
   }
 
   return (
-    <main className="mx-auto flex min-h-screen w-full max-w-sm flex-col justify-center gap-6 p-6">
+    <main className="mx-auto flex w-full max-w-sm flex-1 flex-col justify-center gap-6 p-6">
       <header className="space-y-2">
         <h1 className="text-2xl font-semibold tracking-tight">登录剧荒处方</h1>
         <p className="text-sm text-neutral-500">用邮箱收一个 6 位验证码，不用记密码。</p>
