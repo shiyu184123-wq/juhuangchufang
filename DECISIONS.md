@@ -77,6 +77,29 @@
 - **为什么**：pnpm 11+ 弃用 `onlyBuiltDependencies`，只认 `allowBuilds`；Prisma engines 与 better-sqlite3 原生模块依赖 postinstall。
 - **影响**：P0-01 的 `unrs-resolver` 条目在 approve-builds 重写时被移除（PROGRESS T-003）。
 
+## D-012 · 2026 · 数据库物理命名统一 snake_case（含迁移重置）
+
+- **决策**：所有表名与列名统一 snake_case：Auth.js 四表沿用其 `@map`（`users` / `accounts` / `sessions` /
+  `verification_tokens`）；`EmailCode` → 表 `email_codes`（`code_hash` / `expires_at` / `created_at`）；
+  `Prescription` → 表 `prescriptions`（`user_id` / `anon_id` / `work_key` / `follow_at` / `created_at`）。
+  Prisma 模型字段名保持 camelCase，只通过 `@@map` / `@map` 决定物理名。
+- **为什么**：命名混用（Auth.js 四表 snake_case vs 业务表 PascalCase/camelCase）在 P0-06 迁 Postgres 时会
+  变成一堆带引号的大小写标识符，越晚统一成本越高；此刻表为空、未上线，重建迁移是零成本窗口。
+- **刻意重置**：删除并重建 `20261025091017_init` → `20261025092643_init`，**已提交的迁移文件被改写**。
+  这是一次性问题：从这里开始迁移文件只追加、不再改写（上线后必须走 forward migration）。
+- **替代**：保留旧迁移再加一个 rename 迁移（要在 SQLite 上重建表，且现场无人依赖旧库）；保持混用（迁移期踩坑）。
+- **影响**：以后新增模型一律 snake_case 物理命名；**任何已上线的迁移不得再删改**。Auth.js adapter 不受影响
+  ——它走 Prisma Client API，不读物理表名。
+
+## D-013 · 2026 · Prisma 单例不静默降级（缺 DATABASE_URL 直接抛错）
+
+- **决策**：`src/lib/db.ts` 不再 `process.env.DATABASE_URL ?? "file:./prisma/dev.db"`；读不到变量时抛出
+  明确错误，指明缺失的变量名与配置文件 `.env.local`。
+- **为什么**：兜底会在生产漏配环境变量时静默连到本地空库，症状是"用户数据莫名丢失"，排查成本极高；
+  启动即报错比带着错库跑更安全。
+- **替代**：只在生产环境去掉兜底、开发保留（两套行为、易被误配绕过）；只在启动日志里 warn（照样能跑错库）。
+- **影响**：本地开发必须存在 `.env.local`（模板见 `.env.example`）；CI/部署漏配变量会 fail fast，属预期行为。
+
 ---
 
 ## 待决

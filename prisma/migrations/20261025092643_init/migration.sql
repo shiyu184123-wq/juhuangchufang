@@ -41,25 +41,25 @@ CREATE TABLE "verification_tokens" (
 );
 
 -- CreateTable
-CREATE TABLE "EmailCode" (
+CREATE TABLE "email_codes" (
     "id" TEXT NOT NULL PRIMARY KEY,
     "email" TEXT NOT NULL,
-    "codeHash" TEXT NOT NULL,
-    "expiresAt" DATETIME NOT NULL,
+    "code_hash" TEXT NOT NULL,
+    "expires_at" DATETIME NOT NULL,
     "attempts" INTEGER NOT NULL DEFAULT 0,
-    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+    "created_at" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 -- CreateTable
-CREATE TABLE "Prescription" (
+CREATE TABLE "prescriptions" (
     "id" TEXT NOT NULL PRIMARY KEY,
-    "userId" TEXT,
-    "anonId" TEXT,
-    "workKey" TEXT NOT NULL,
+    "user_id" TEXT,
+    "anon_id" TEXT,
+    "work_key" TEXT NOT NULL,
     "source" TEXT NOT NULL DEFAULT 'system',
-    "followAt" DATETIME,
+    "follow_at" DATETIME,
     "status" TEXT NOT NULL DEFAULT 'issued',
-    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+    "created_at" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 -- CreateIndex
@@ -75,10 +75,10 @@ CREATE UNIQUE INDEX "sessions_session_token_key" ON "sessions"("session_token");
 CREATE UNIQUE INDEX "verification_tokens_identifier_token_key" ON "verification_tokens"("identifier", "token");
 
 -- CreateIndex
-CREATE INDEX "EmailCode_email_idx" ON "EmailCode"("email");
+CREATE INDEX "email_codes_email_idx" ON "email_codes"("email");
 
 -- CreateIndex
-CREATE INDEX "Prescription_followAt_idx" ON "Prescription"("followAt");
+CREATE INDEX "prescriptions_follow_at_idx" ON "prescriptions"("follow_at");
 
 -- CreateIndex
-CREATE INDEX "Prescription_anonId_idx" ON "Prescription"("anonId");
+CREATE INDEX "prescriptions_anon_id_idx" ON "prescriptions"("anon_id");
