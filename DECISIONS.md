@@ -121,6 +121,58 @@
 
 ---
 
+## D-015 · 2026 · Bangumi 绑定走手写授权码流程（不注册 Auth.js provider），端点逐条查证
+
+- **决策**：P0-04 的「绑定 Bangumi」**不复用 Auth.js 的 OAuth provider**，而是自己写授权码流程：
+  `GET /api/auth/bangumi/start` 生成 `state` → 存 httpOnly cookie → 302 到 Bangumi 授权页；
+  `GET /api/auth/callback/bangumi` 校验 `state` → 换 token → `GET /v0/me` 确认身份 →
+  **由我们自己的代码** `prisma.account.upsert` 落库。`src/lib/auth.ts` 本轮**没有改动**。
+- **为什么（语义分离）**：本站登录已经由邮箱验证码 + JWT session 完成，本轮要的是"绑定到当前账号"，
+  不是"用 Bangumi 登录"。把 Bangumi 注册成 Auth.js provider 会把用户送进"OAuth 登录 → 可能创建/切换用户"
+  那条路径，与"当前登录用户绑定一个外部账号"不是一回事；不注册 provider，这条歧义路径根本不存在。
+- **为什么（没有 adapter，谁写 token）**：D-014 已确定不装 `@auth/prisma-adapter`，所以 Auth.js 不会替我们写
+  `accounts`。写库点只有一个：回调路由里换到 token 且 `/v0/me` 成功之后的那次 `upsert`
+  （`src/lib/bgm/binding.ts` 的 `bindBangumiAccount`）。`expires_at = floor(now/1000) + expires_in`。
+- **为什么（选 A 而不是 B）**：① Auth.js 的 OAuth 流程在没有 adapter 时无处落库，B 会退化成
+  "在 `signIn` 回调里自己写库还要绕过它的登录语义"，等于 A 多绕一圈；② 错误处理可控 ——
+  用户取消（`error=access_denied`）、授权码 60 秒过期、token 失效都能 redirect 成中文提示，
+  而不是 Auth.js 的默认 Error 页；③ 回调地址 `http://localhost:3000/api/auth/callback/bangumi` 已在 Bangumi 后台登记，
+  自写路由能保证路径字面不变；④ 以后接 AniList 可整份复制。
+- **端点核实（2026-10-25，实测下载规范比对，非凭记忆）**：
+  - 出处：`github.com/bangumi/api` 的 `docs-raw/How-to-Auth.md` 与 `open-api/v0.yaml`
+    （`/v0/me` 在 1025 行起，`/v0/users/{username}/collections` 在 1064 行起，
+    `Paged_UserCollection` 在 3115 行起，`User` 在 2052 行起）。逐条结论已抄进 `src/lib/bgm/api.ts` 顶部注释。
+  - 授权页 `GET https://bgm.tv/oauth/authorize`：`client_id`、`response_type=code`、`redirect_uri`、`state`。
+    **`scope` 文档标注「尚未实现」→ 本项目一律不传**（不是漏传，是刻意不传）。
+  - 换 token `POST https://bgm.tv/oauth/access_token`：`grant_type=authorization_code` + `client_id` +
+    `client_secret` + `code` + `redirect_uri`，返回 `access_token` / `expires_in`(604800 秒 = 7 天) /
+    `refresh_token` / `user_id`；刷新用同一端点的 `grant_type=refresh_token`（本轮不实现，字段照存）。
+  - 调用 API：`Authorization: Bearer <token>`；`/v0/` **不支持** query string 传 token。
+    OAuth 域名是 `bgm.tv`、API 域名是 `api.bgm.tv`，不可互换。
+  - `User-Agent` 必须是「开发者 ID/应用名」，本项目统一 `shiyu/juhuang-chufang`，**每个**请求都带
+    （含 `/v0/me` 与换 token 请求），禁用 `Bangumi/1.0`、`database` 这类泛化值。
+- **用户名与收藏总数（也是查证结果）**：
+  - `GET /v0/me` 返回的 `User` 同时有 `username`（唯一名，初始=UID，可改一次，做 URL 路径参数）与
+    `nickname`（显示昵称）。**页面显示 `nickname`**（用户在 Bangumi 主页看到的就是它），
+    路径参数用 `username`，二者不混用。响应里的 `email` 属于隐私字段，本项目不取、不存、不显示。
+  - **收藏总数**：`GET /v0/users/{username}/collections` 的响应 `Paged_UserCollection` 自带 `total` 字段，
+    所以一次 `limit=1&offset=0` 读 `total` 即可，不需要按 `subject_type` 累加、也不拉全量。
+    口径是**所有条目类型的收藏合计**（`subject_type` 省略=全部），因此页面文案写「收藏总数 N 条」，
+    不写「N 部动画」。`subject_type` 枚举：1 书籍 / 2 动画 / 3 音乐 / 4 游戏 / 6 三次元（没有 5）。
+- **落库去向（任务卡第 6 步要求自行判断并记录）**：`accounts.provider_account_id` 存 **Bangumi 数字用户 id**
+  （字符串形式，如 `"12345"`），`provider` 固定 `bangumi`。`username`/`nickname` **不落库**：
+  `accounts` 表没有对应列，而 `prisma/schema.prisma` 不在本卡允许修改范围，所以显示时用存下的 token
+  现查 `/v0/me`（进程内缓存键 = `account.id + expires_at`，5 分钟）。代价：token 过期后设置页只能提示重新绑定（见 T-010）。
+- **`state` 防 CSRF**：24 字节随机数，`httpOnly` + `SameSite=Lax` + `Max-Age=600`（授权码本身 60 秒有效），
+  回调时 query 与 cookie 必须**完全相等**且 cookie 一次性清除；不相等一律回 `/settings?bgm=state`。
+  用户取消（`error=access_denied`）也要求"确实由本站发起"（有 state cookie）才认定为取消。
+- **替代**：B（注册 Auth.js provider，在 `signIn` 回调里决定是否写库）—— 见上"为什么选 A"。
+- **影响**：`accounts` 表里 bangumi 行的唯一写入方是本项目代码；`sessions` 表仍为空（JWT）；
+  解绑只删当前用户自己的那条记录；一个本站用户只保留一条 bangumi 记录（换绑时先删旧行）；
+  同一个 Bangumi 账号被第二个本站账号尝试绑定时拒绝（`/settings?bgm=taken`），不抢走已有绑定。
+
+---
+
 ## 待决
 
 | 编号 | 待决问题 | 影响 |

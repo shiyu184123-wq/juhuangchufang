@@ -6,7 +6,7 @@
 
 | 阶段 | 状态 | 完成度 | 备注 |
 |---|---|---|---|
-| P0 地基 | 🟡 进行中 | 3/6 | 骨架 + 数据模型 + 邮箱验证码登录已跑通，Bangumi OAuth 未开始 |
+| P0 地基 | 🟡 进行中 | 4/6 | 骨架 + 数据模型 + 验证码登录 + Bangumi 绑定已跑通，剩应用外壳与部署 |
 | P1 闭环 | ⬜ 未开始 | 0/6 | 诊断 → 处方 → 复诊 |
 | P2 精准 | ⬜ 未开始 | 0/6 | 画像 + 推荐 |
 | P3 增长 | ⬜ 未开始 | 0/2 | 人开方 + 事件推送 |
@@ -16,10 +16,12 @@
 
 ## 当前状态
 
-- **正在做**：无 —— P0-03 已完成并提交，等下一张任务卡
-- **刚完成**：P0-03 邮箱验证码登录（Credentials + JWT session，见 D-014）
-- **下一个**：P0-04 Bangumi OAuth
-- **阻塞项**：无（本地缺 `RESEND_API_KEY`，真实收信与手机真机未验证，见 T-008）
+- **正在做**：无 —— P0-04 已完成并提交，等下一张任务卡
+- **刚完成**：P0-04 Bangumi 账号绑定（手写 OAuth 授权码流程，选型与查证见 D-015）
+- **下一个**：P0-05 应用外壳（`tasks/P0-05-shell.md`）
+- **阻塞项**：无阻塞。两条未验证项见 T-010 / T-011：真实 Bangumi 授权（本机 443 不通）与 token 7 天自动刷新
+  —— 你自己手测绑定前，必须先把 `BANGUMI_CLIENT_ID` / `BANGUMI_CLIENT_SECRET` / `BANGUMI_REDIRECT_URI`
+  填进 `.env.local`（现在只填了 `DATABASE_URL` 与 `AUTH_SECRET`）
 
 ## 已完成
 
@@ -72,6 +74,42 @@
   - 数据核验：`email_codes.code_hash` = 32 位 hex salt + `:` + 64 位 hex，无明文；`users.email_verified` 已写入
   - 未做：真实邮件投递、手机真机完整登录（本地无 `RESEND_API_KEY`，见 T-008）
 
+- **P0-04 Bangumi 账号绑定**（手写 OAuth 授权码流程，不装 adapter、不注册 Auth.js provider，见 D-015）
+  - `src/lib/bgm/api.ts`：端点/常量 + 核实结论注释（2026-10-25 与官方 `How-to-Auth.md`、`open-api/v0.yaml` 逐条比对）；
+    三类请求（授权页拼 URL / 换 token / 调 API）统一带 `User-Agent: shiyu/juhuang-chufang`、10 秒超时、
+    返回结构化 `{ ok, data } | { ok, error }` 而不是抛裸异常；**刻意不传 `scope`**（官方标注尚未实现）
+  - `src/lib/bgm/binding.ts`：`bindBangumiAccount`（`upsert` + 换绑先删旧行 + 拒绝抢别人已绑的号）、
+    `unbindBangumiAccount`（只删当前用户那条）、`getBangumiCard`（先查库，5 分钟缓存键 = `account.id + expires_at`，
+    解绑/换绑自动失效；`/v0/me` 401 → 「授权已失效」，`expires_at` 已过 → 「授权已过期」）
+  - 三个路由：`/api/auth/bangumi/start`（要求已登录 → 随机 `state` 存 httpOnly cookie → 302 授权页）、
+    `/api/auth/callback/bangumi`（`state` 校验 → 换 token → `/v0/me` → 落库；每一步失败都 redirect 带中文提示）、
+    `/api/auth/bangumi/unbind`（表单 POST → 303，不依赖 JS）
+  - `src/app/settings/page.tsx`：未绑定 → 「绑定 Bangumi」；已绑定 → 昵称 / `@username` / 收藏总数 + 「解绑」；
+    12 种结果提示（成功 / 取消 / 过期 / state 失败 / 缺配置 / 读取失败 / 被占用 / 解绑…）；按钮 ≥ 44px
+  - `.env.example` 补凭据注释；**`src/lib/auth.ts` 与 `prisma/schema.prisma` 未改动**
+  - 验收：`scripts/check.ps1` → `pnpm build` exit 0（`/settings`、`/api/auth/callback/bangumi` 均编译进路由表）、
+    `pnpm lint` 无告警（exit 0）
+  - 手测（curl 打 dev server；Bangumi 侧用本地 mock 服务替身，原因见 T-011）：
+    - 未登录 `start` → 307 `/login`；未登录回调 → `/settings?bgm=login`；回调由本路由处理
+      （响应里带清 state cookie），证明静态段路由优先于 `[...nextauth]` catch-all
+    - 授权 URL 参数正确：`client_id`、`response_type=code`、`redirect_uri`、`state`，**无 `scope`**；
+      `Set-Cookie: bgm_oauth_state=…; Path=/; Max-Age=600; HttpOnly; SameSite=lax`
+    - 正确 state + code → `/settings?bgm=ok`；DB 行 `provider_account_id=12345`、`expires_at` = now + 604800 秒、
+      `refresh_token` 已存、`token_type=Bearer`；页面显示 `Sai🖖` / `@sai` / `收藏总数 42 条`
+    - 伪造 state → `/settings?bgm=state`；缺 state cookie → 同上；`error=access_denied` → `/settings?bgm=denied`
+    - 换 token 失败（含授权码 60 秒过期、网络不通）→ `/settings?bgm=invalid_code`，
+      页面显示「授权已过期（授权码只有 60 秒有效期），请重新点一次绑定」，不白屏
+    - 解绑 → 303 `/settings?bgm=unbound`，DB 行删除、页面回未绑定态；解绑后可再次绑定成功
+    - 同一 Bangumi 号被第二个本站账号绑定 → `/settings?bgm=taken`，原绑定未被抢走；
+      另一个本站账号看不到别人的绑定信息
+    - token 被改坏 → 「Bangumi 授权已失效，请重新绑定。」；`expires_at` 改成过去 → 「Bangumi 授权已过期（有效期 7 天）…」
+    - 页面源码不含 `access_token` / `refresh_token` 的字段名与值；mock 日志确认换 token、`/v0/me`、
+      `/v0/users/sai/collections?limit=1&offset=0` 三次请求都带正确 User-Agent
+    - 连续两次刷新设置页只打一组 Bangumi 请求（5 分钟缓存生效）
+  - 顺带修掉一个真 bug：缓存原先按 `userId` 命中、靠手动清；dev 下 route handler 与 page 属于不同模块实例，
+    清缓存清不到另一份 `Map`，表现为「解绑后页面仍显示已绑定」。改为先查库 + 缓存键含 `account.id`/`expires_at`
+  - 未做：真实 Bangumi 服务器手测（T-011）、token 自动刷新（T-010）；`/settings` 目前没有入口链接，从 `/me` 手动输入 URL 进入
+
 ## 已知问题 / 技术债
 
 | 编号 | 问题 | 影响 | 计划 |
@@ -85,6 +123,8 @@
 | T-007 | `better-sqlite3` 双版本：项目根是 13.0.3（**未编译出原生 binding**），`@prisma/adapter-better-sqlite3` 内嵌的 12.11.1 才有 `better_sqlite3.node` | 去掉 `next.config.ts` 的 `serverExternalPackages` 后，dev 下任何 DB 调用都报 `Could not locate the bindings file` | 根治：把 `better-sqlite3` 固定到 12.11.1（或 pnpm overrides 统一），再移除 workaround 复测 |
 | T-008 | 本地没有 `RESEND_API_KEY`：开发环境改为"跳过真实发信、把验证码打到服务端日志"，生产仍缺 key 即报错 | **登录链路已端到端验证**（2026-10-25 用 ofdgcdb784@do2.online 实测 8 项全过：发码 200 且响应不含码 / 60 秒内重发 429 带 Retry-After / 正确码 200 且 Set-Cookie 含会话 / `/me` 200 显示该邮箱 / 同码复用 400 / 5 次错码后真码作废 400 / signout 302 后 `/me` 307 跳 `/login`；DB 中 `code_hash` 为 32hex:64hex 无明文、`users.email_verified` 已写入）；**真实邮件投递仍未验证**，手机真机未验证 | 要真测投递时把 key 写进 `.env.local`，先用 `onboarding@resend.dev` 发给自己的注册邮箱 |
 | T-009 | 发码限流是进程内 `Map` | 多实例部署时每个实例各限各的，等于放宽上限 | P0 单实例够用；上多实例前换 Redis 或数据库计数 |
+| T-010 | Bangumi `access_token` 有效期只有 7 天，本轮**不实现自动刷新**（`refresh_token` / `expires_at` 已存库） | 绑定 7 天后设置页会提示「授权已过期，请重新绑定」，用户每 7 天要重新授权一次 | 接 P2-01 收藏同步时一并做 `grant_type=refresh_token`，在该端点同域名下续期并回写 |
+| T-011 | 本机访问 `bgm.tv` / `api.bgm.tv` 的 TCP 443 不通（DNS 能解析，`Test-NetConnection … -Port 443` 为 False，curl 21 秒超时），所以**真实 Bangumi 授权与真实 API 没有端到端验证** | 本轮改用本地 mock 服务替换这两个域名，验证了除"真实服务器"以外的全部链路（授权 URL 参数、state 校验、换 token、`/v0/me`、收藏总数 `total`、落库、301/303 跳转、错误提示、解绑、抢占用拒绝）；但"昵称与收藏数与 Bangumi 主页一致"这一条仍未验证 | 换可用网络（或代理）后按任务卡手测清单重跑一遍，并顺手核对 ① 一次 `limit=1` 的 `total` 是否等于 ② 5 个 `subject_type` 分别取 `total` 之和 |
 
 ## 关键指标（自己填，用来判断是否该继续投）
 
