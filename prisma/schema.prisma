@@ -12,9 +12,9 @@ datasource db {
 
 // ---------------------------------------------------------------------------
 // Auth.js 四表（https://authjs.dev/getting-started/adapters/prisma）
-// 注意：Auth.js 官方 schema 用的是 camelCase 字段名，且没有 @@map。
-// 本项目统一采用 snake_case 物理命名（表名与列名都 snake_case），所以这里显式
-// 写了 @@map / @map；Auth.js adapter 通过 Prisma Client API（camelCase 属性）
+// Auth.js 官方 schema 的字段名是 camelCase，表名/列名通过 @@map / @map 映射为
+// snake_case。本项目沿用同一套约定（表名与列名都 snake_case），所以这里照官方
+// 显式写了 @@map / @map；Auth.js adapter 通过 Prisma Client API（camelCase 属性）
 // 读写数据，不依赖物理表名/列名，因此这些映射不影响 adapter 行为。
 // 仅去掉了 SQLite 不支持的 `@db.Text` 原生类型注解。
 // ---------------------------------------------------------------------------
