@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { auth, signOut } from "@/lib/auth";
 
@@ -17,6 +18,13 @@ export default async function MePage() {
       <p className="rounded-lg border border-neutral-200 px-4 py-3 text-base">
         {session.user.email}
       </p>
+
+      <Link
+        href="/settings"
+        className="inline-flex min-h-[44px] w-full items-center justify-center rounded-lg border border-neutral-300 px-4 text-base text-neutral-700"
+      >
+        设置
+      </Link>
 
       <form
         action={async () => {

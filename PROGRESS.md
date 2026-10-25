@@ -16,12 +16,11 @@
 
 ## 当前状态
 
-- **正在做**：无 —— P0-04 已完成并提交，等下一张任务卡
-- **刚完成**：P0-04 Bangumi 账号绑定（手写 OAuth 授权码流程，选型与查证见 D-015）
+- **正在做**：无 —— P0-04（含收尾：真实绑定跑通）已完成并提交，等下一张任务卡
+- **刚完成**：P0-04 收尾 —— `pnpm dev:proxy` 解决 Node 代理问题，真实 Bangumi 绑定验证通过（`MegumiKT` / 317 条）
 - **下一个**：P0-05 应用外壳（`tasks/P0-05-shell.md`）
-- **阻塞项**：无阻塞。两条未验证项见 T-010 / T-011：真实 Bangumi 授权（本机 443 不通）与 token 7 天自动刷新
-  —— 你自己手测绑定前，必须先把 `BANGUMI_CLIENT_ID` / `BANGUMI_CLIENT_SECRET` / `BANGUMI_REDIRECT_URI`
-  填进 `.env.local`（现在只填了 `DATABASE_URL` 与 `AUTH_SECRET`）
+- **阻塞项**：无。只剩 T-010（token 7 天过期需重新授权，未做自动刷新）。
+  本地起 dev 请用 `pnpm dev:proxy`（否则 Node 直连 bgm.tv 必失败，见 D-016）；`.env.local` 三项凭据已配好
 
 ## 已完成
 
@@ -108,7 +107,30 @@
     - 连续两次刷新设置页只打一组 Bangumi 请求（5 分钟缓存生效）
   - 顺带修掉一个真 bug：缓存原先按 `userId` 命中、靠手动清；dev 下 route handler 与 page 属于不同模块实例，
     清缓存清不到另一份 `Map`，表现为「解绑后页面仍显示已绑定」。改为先查库 + 缓存键含 `account.id`/`expires_at`
-  - 未做：真实 Bangumi 服务器手测（T-011）、token 自动刷新（T-010）；`/settings` 目前没有入口链接，从 `/me` 手动输入 URL 进入
+  - 未做：token 自动刷新（T-010）
+
+- **P0-04 收尾：真实 Bangumi 绑定跑通**（2026-10-25，经系统代理与真实服务器对接）
+  - 新增 `scripts/dev.ps1` + `pnpm dev:proxy`：启动前读 Windows 系统代理，设置 `HTTPS_PROXY` / `HTTP_PROXY` +
+    `NODE_USE_ENV_PROXY=1`。原因：Node 24 的 `fetch` 不读系统代理，只设 `HTTPS_PROXY` 无效（实测证据见 D-016）
+  - 缺陷修复：① 网络错误不再误报「授权码过期」—— 回调按 `error.kind === "network"` 分流到
+    `/settings?bgm=network`，新增文案「连不上 Bangumi 服务器（可能是网络或代理问题），请稍后重试。」；
+    ② `/me` 增加「设置」入口（触控区 ≥ 44px），不再需要手输 URL
+  - **真实绑定结果**（本站账号 `p004-real@example.com` 绑定 Bangumi 用户 `MegumiKT`）：
+    - 授权跳转：`GET https://bgm.tv/oauth/authorize?client_id=bgm73976addfd2be52aa&response_type=code&redirect_uri=http%3A%2F%2Flocalhost%3A3000%2Fapi%2Fauth%2Fcallback%2Fbangumi&state=…`；
+      未登录 Bangumi 时真实服务器 302 到 `/login?chii_referer=/oauth/authorize?client_id=…`，说明 client_id 与 redirect_uri 均被接受
+    - 回调：`307 → /settings?bgm=ok`（换 token + `/v0/me` + collections 真实往返 2603ms）
+    - DB：`provider_account_id=894485`（Bangumi 数字 id）、`expires_at` = now + 604800 秒、
+      `access_token` / `refresh_token` 各 40 字符、`token_type=Bearer`
+    - 页面：`MegumiKT` / `@894485` / `收藏总数 317 条`
+  - **收藏总数核对方式**：`GET /v0/users/894485/collections?limit=1&offset=0` 的 `total = 317`；
+    再按 `subject_type` 分别取：书籍 0 / 动画 317 / 音乐 0 / 游戏 0 / 三次元 0，合计正好 317 ——
+    与「全类型合计」口径自洽，也与页面「317 条」一致。主页上分类型显示的数字需你本人对照（见下）
+  - 其余断言全过：刷新后信息仍在；解绑 303 → 未绑定态且 DB 行删除；解绑后再绑成功（新 `account.id`，缓存未串）；
+    模拟授权页取消 → `?bgm=denied` +「你在 Bangumi 授权页取消了授权」，且原绑定不受影响；
+    另一个邮箱账号看不到任何绑定信息；页面源码不含 token 字段名与值
+  - 缓存实测：首次渲染 863ms（真打两次 Bangumi API），之后 217ms / 182ms（命中进程内缓存）
+  - 仍未验证：① 页面「317 条」与你 bgm.tv 网页版个人主页上的数字是否一致（我拿到的是 API 口径，主页得你肉眼对照）；
+    ② token 自动刷新（T-010）
 
 ## 已知问题 / 技术债
 
@@ -124,7 +146,7 @@
 | T-008 | 本地没有 `RESEND_API_KEY`：开发环境改为"跳过真实发信、把验证码打到服务端日志"，生产仍缺 key 即报错 | **登录链路已端到端验证**（2026-10-25 用 ofdgcdb784@do2.online 实测 8 项全过：发码 200 且响应不含码 / 60 秒内重发 429 带 Retry-After / 正确码 200 且 Set-Cookie 含会话 / `/me` 200 显示该邮箱 / 同码复用 400 / 5 次错码后真码作废 400 / signout 302 后 `/me` 307 跳 `/login`；DB 中 `code_hash` 为 32hex:64hex 无明文、`users.email_verified` 已写入）；**真实邮件投递仍未验证**，手机真机未验证 | 要真测投递时把 key 写进 `.env.local`，先用 `onboarding@resend.dev` 发给自己的注册邮箱 |
 | T-009 | 发码限流是进程内 `Map` | 多实例部署时每个实例各限各的，等于放宽上限 | P0 单实例够用；上多实例前换 Redis 或数据库计数 |
 | T-010 | Bangumi `access_token` 有效期只有 7 天，本轮**不实现自动刷新**（`refresh_token` / `expires_at` 已存库） | 绑定 7 天后设置页会提示「授权已过期，请重新绑定」，用户每 7 天要重新授权一次 | 接 P2-01 收藏同步时一并做 `grant_type=refresh_token`，在该端点同域名下续期并回写 |
-| T-011 | 本机访问 `bgm.tv` / `api.bgm.tv` 的 TCP 443 不通（DNS 能解析，`Test-NetConnection … -Port 443` 为 False，curl 21 秒超时），所以**真实 Bangumi 授权与真实 API 没有端到端验证** | 本轮改用本地 mock 服务替换这两个域名，验证了除"真实服务器"以外的全部链路（授权 URL 参数、state 校验、换 token、`/v0/me`、收藏总数 `total`、落库、301/303 跳转、错误提示、解绑、抢占用拒绝）；但"昵称与收藏数与 Bangumi 主页一致"这一条仍未验证 | 换可用网络（或代理）后按任务卡手测清单重跑一遍，并顺手核对 ① 一次 `limit=1` 的 `total` 是否等于 ② 5 个 `subject_type` 分别取 `total` 之和 |
+| T-011 | Node 的 fetch 不读 Windows 系统代理，Node 24 需 `NODE_USE_ENV_PROXY=1` + `HTTPS_PROXY` 才走代理，否则直连 bgm.tv 拿到被污染 DNS 结果并超时 | 本地 dev 必须带代理启动，否则绑定必失败 | **已解决**：`scripts/dev.ps1` 自动读系统代理并设置；生产服务器能直连，不受影响（见 D-016） |
 
 ## 关键指标（自己填，用来判断是否该继续投）
 

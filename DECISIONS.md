@@ -173,6 +173,35 @@
 
 ---
 
+## D-016 · 2026 · 本地开发必须用 `pnpm dev:proxy` 启动（Node 的 fetch 不读系统代理）
+
+- **决策**：新增 `scripts/dev.ps1` 与 `package.json` 的 `dev:proxy` —— 启动前读 Windows 系统代理
+  （`HKCU:\Software\Microsoft\Windows\CurrentVersion\Internet Settings` 的 `ProxyServer`），
+  设置 `HTTPS_PROXY` / `HTTP_PROXY` **以及 `NODE_USE_ENV_PROXY=1`**，再执行 `pnpm dev`。
+  `pnpm dev` 本身不改，留给"能直连"的环境（CI、生产）。
+- **为什么**：Node 24 的 `fetch`（undici）**不读 Windows 系统代理**。只导出 `HTTPS_PROXY` 时它仍然直连，
+  而本机对 `bgm.tv` / `api.bgm.tv` 的 DNS 解析到的地址 443 不通，表现为 10 秒后 `TypeError` 超时，
+  用户看到的是「连不上 Bangumi」，很容易误判成 Bangumi 挂了或凭据错了（这就是 T-011 的真实原因）。
+  `NODE_USE_ENV_PROXY=1` 是 Node 24 的内置开关，让 `fetch` 识别环境变量代理，**不需要任何新依赖**。
+- **实测证据（2026-10-25，本机代理 `http://127.0.0.1:7897`，请求 `GET https://api.bgm.tv/v0/me`）**：
+
+  | 环境变量 | 结果 |
+  |---|---|
+  | 全不设 | `FAIL TypeError in 10676ms`（直连超时） |
+  | 只设 `HTTPS_PROXY` + `HTTP_PROXY` | `FAIL TypeError in 10660ms`（**仍直连**，证明只设无效） |
+  | 再设 `NODE_USE_ENV_PROXY=1` | `status=401 in 457ms`（无 token 返回 401，即成功连通） |
+
+  同一天在 dev server 内实测：带代理时换 token 真实往返；把代理指向死端口（`http://127.0.0.1:9`）
+  重启后，回调稳定落到 `/settings?bgm=network`，而不是误报「授权码过期」。
+- **替代**：手动 `$env:HTTPS_PROXY=...`（每次开终端都要记得，IDE 内建终端还会继承不到）；
+  改 npm 全局 `proxy` 配置（只影响 npm，不影响 Node 的 `fetch`）；装 `undici` 的 `ProxyAgent` 手动挂 dispatcher
+  （要改业务代码并加依赖，超出了本地环境的范畴）。
+- **影响**：只有本地 dev 需要代理，生产服务器直连 `bgm.tv` 不受影响；
+  `scripts/dev.ps1` 以 UTF-8 **带 BOM** 保存，否则 Windows PowerShell 5.1 会把中文提示读成乱码；
+  系统没设代理时脚本原样 `pnpm dev`，不改变直连行为。
+
+---
+
 ## 待决
 
 | 编号 | 待决问题 | 影响 |

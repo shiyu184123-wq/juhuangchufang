@@ -61,14 +61,16 @@ export async function GET(req: NextRequest) {
     clientSecret: config.data.clientSecret,
     redirectUri: config.data.redirectUri,
   });
-  if (!tokenResult.ok) return back("invalid_code");
+  // 网络错误（含超时）与「code 失效」不是一回事：前者是连不上 Bangumi（代理没开等），
+  // 提示成「授权码过期」会让用户白试好几次，所以分开。
+  if (!tokenResult.ok) return back(tokenResult.error.kind === "network" ? "network" : "invalid_code");
 
   const { access_token: accessToken, refresh_token: refreshToken, expires_in: expiresIn } = tokenResult.data;
   if (!accessToken) return back("invalid_code");
 
   // 5) 带 Bearer + User-Agent 调 /v0/me 确认身份（用户名/昵称都以这里为准，不信任 URL 参数）
   const me = await getMyself(accessToken);
-  if (!me.ok) return back("profile");
+  if (!me.ok) return back(me.error.kind === "network" ? "network" : "profile");
 
   // 6) 收藏总数只取 total；失败不影响绑定成功（设置页会显示「—」）
   const total = await getCollectionTotal(accessToken, me.data.username);

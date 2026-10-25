@@ -17,6 +17,7 @@ const NOTICES: Record<string, { tone: NoticeTone; text: string }> = {
   state: { tone: "error", text: "授权校验失败（state 不匹配），请重新发起绑定。" },
   config: { tone: "error", text: "服务端没有配置 Bangumi 应用凭据，暂时无法绑定。" },
   profile: { tone: "error", text: "已拿到授权，但读取 Bangumi 用户信息失败，请重试。" },
+  network: { tone: "error", text: "连不上 Bangumi 服务器（可能是网络或代理问题），请稍后重试。" },
   taken: { tone: "error", text: "这个 Bangumi 账号已经绑定了另一个本站账号。" },
   login: { tone: "warn", text: "请先登录，再发起 Bangumi 绑定。" },
   failed: { tone: "error", text: "绑定没有完成，请重试。" },
