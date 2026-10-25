@@ -1,4 +1,14 @@
+# pnpm 构建脚本白名单。pnpm 11+ 已用 allowBuilds 取代 onlyBuiltDependencies /
+# ignoredBuiltDependencies（旧字段会被静默忽略），正确字段名是 allowBuilds。
+# true = 允许执行安装脚本，false = 明确拒绝（两者都算"已决策"，不会再报 ERR_PNPM_IGNORED_BUILDS）。
 allowBuilds:
   '@prisma/engines': true
+  # better-sqlite3 用同一条 install 脚本（prebuild-install || node-gyp rebuild）：
+  # 优先拉预编译二进制，失败才本地编译。本机 build/Release/better_sqlite3.node
+  # 就是这条脚本产出的，所以它必须留在白名单里。
   better-sqlite3: true
   prisma: true
+  # unrs-resolver（eslint 的解析器依赖）的 postinstall 只是兜底校验/下载；
+  # 它的原生 .node 由 optionalDependencies（@unrs/resolver-binding-*）直接分发，
+  # 本机已装 win32-x64 预编译包，无需再跑第三方脚本 → 显式拒绝。
+  unrs-resolver: false

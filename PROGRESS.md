@@ -16,8 +16,9 @@
 
 ## 当前状态
 
-- **正在做**：无 —— P0-04（含收尾：真实绑定跑通）已完成并提交，等下一张任务卡
-- **刚完成**：P0-04 收尾 —— `pnpm dev:proxy` 解决 Node 代理问题，真实 Bangumi 绑定验证通过（`MegumiKT` / 317 条）
+- **正在做**：无 —— T-007（`better-sqlite3` 版本错配）已修完，等下一张任务卡
+- **刚完成**：T-007 —— `better-sqlite3` 从 `13.0.3` 钉到 `12.11.1`，全仓库只剩一个版本、二进制由包自带
+  （`pnpm install` 一条命令可重建）；`serverExternalPackages` 经 Next 官方文档与内置列表核实**是必需配置，已保留**
 - **下一个**：P0-05 应用外壳（`tasks/P0-05-shell.md`）
 - **阻塞项**：无。只剩 T-010（token 7 天过期需重新授权，未做自动刷新）。
   本地起 dev 请用 `pnpm dev:proxy`（否则 Node 直连 bgm.tv 必失败，见 D-016）；`.env.local` 三项凭据已配好
@@ -132,17 +133,71 @@
   - 缓存实测：首次渲染 863ms（真打两次 Bangumi API），之后 217ms / 182ms（命中进程内缓存）
   - 仍未验证：token 自动刷新（T-010）；真实邮件投递与手机真机（T-008）
 
+- **T-007 修复：`better-sqlite3` 版本错配**（只动 `package.json` / `pnpm-workspace.yaml` / `next.config.ts`，不碰业务代码）
+  - **诊断推翻了原先的病因假设**：13.0.3 不是"没编译出来"，而是**13.x 起根本不需要编译**——它
+    `"gypfile": false`、**没有 `install` 脚本**、二进制随包发布在 `prebuilds/win32-x64.node`（1,989,632 B），
+    由 `lib/binding.js` 在运行时按 `process.platform` 直接 `require`。所以
+    `build/Release/better_sqlite3.node` 在 13.x 下**本来就不该存在**，拿它当"缺二进制"是误判。
+    （12.11.1 才是老路子：`install: prebuild-install || node-gyp rebuild --release` → `build/Release/*.node`）
+  - **真正的根因**：`package.json` 直接依赖 `^13.0.3`，而 `@prisma/adapter-better-sqlite3@7.10.1` 把
+    `better-sqlite3: ^12.6.0` 声明在 **`dependencies`（不是 `peerDependencies`）** 里 —— pnpm 隔离，
+    于是同一仓库装了两份。业务代码从不直接 `import "better-sqlite3"`，全靠 adapter 内部那份 12.11.1 在跑，
+    顶层 13.0.3 是**死依赖**；之前能跑，纯属 pnpm 目录布局 + `serverExternalPackages` 凑巧对上。
+  - **选方案 A**：`package.json` 写死 `"better-sqlite3": "12.11.1"`（精确版本、不带 `^`），与 adapter 的
+    `^12.6.0` 对齐后 pnpm 去重成一份。不用 `pnpm.overrides`：一条精确依赖已经够，overrides 属于"将来若
+    第三方再拉 13.x"的备用手段，现在加只是多一层隐式规则。
+  - **各问各答**：
+    - 「13.0.3 为何没产出二进制」→ 它不需要产出，见上。
+    - 「pnpm 12 控制构建脚本白名单的正确字段」→ **`allowBuilds`**（写在 `pnpm-workspace.yaml`）。
+      证据取自本机 pnpm 12.15.0 自带 CHANGELOG：`onlyBuiltDependencies` / `onlyBuiltDependenciesFile` /
+      `neverBuiltDependencies` / `ignoredBuiltDependencies` 在 **pnpm 11** 就被 `allowBuilds` 取代、
+      此后**静默忽略**；`pnpm config get allowBuilds` 能读到值、`pnpm config get onlyBuiltDependencies` 返回
+      `undefined`。项目原本已是对的（D-011），没有需要修的字段名。
+    - 「`serverExternalPackages` 能不能删」→ **不能，已保留**。依据 Next.js 15 官方文档
+      （`next.config.js` → `serverExternalPackages`：用 Node 专有能力的依赖可改为原生 `require`）与本机
+      `next@15.5.28` 的 `dist/lib/server-external-packages.json`：`better-sqlite3`、`@prisma/client` 在
+      内置列表里，**`@prisma/adapter-better-sqlite3` 不在** —— 它才是这条配置真正不可删的理由。
+      技术债原文里"移除 workaround 复测"这句是误导向，按官方文档纠正（见 D-018）。
+  - 顺带修掉全量重装暴露的白名单缺口：`unrs-resolver`（eslint 解析器链）的 postinstall 被拦，导致
+    `pnpm install` 以 `ERR_PNPM_IGNORED_BUILDS` 退出。它的原生 `.node` 由 `optionalDependencies`
+    （`@unrs/resolver-binding-win32-x64-msvc`，1,886,720 B）直接分发，postinstall 只是兜底校验，
+    故在 `allowBuilds` 里显式写 `unrs-resolver: false`（`false` 也是"已决策"，不再报错，且不放第三方脚本进流水线）。
+  - **验证（不靠巧合）**：
+    - 版本：`pnpm why better-sqlite3` → `Found 1 version of better-sqlite3`；
+      `node_modules/.pnpm/` 下只剩 `better-sqlite3@12.11.1`；13.0.3 与旧 peer-hash 的 prisma 虚拟目录已随
+      删除 `node_modules` 后重装清掉（实话：`Remove-Item` 在 `better_sqlite3.node` 上被占用拦了一下、
+      未删净，随后 `pnpm install` 重建了完整布局，最终只有 12.11.1 这一份）
+    - 二进制：`node_modules/.pnpm/better-sqlite3@12.11.1/node_modules/better-sqlite3/build/Release/better_sqlite3.node`
+      = 1,919,488 B（> 1 MB）
+    - 加载实测：`node -e "require('better-sqlite3')"` → `sqlite_version = 3.53.2`，建表/插入/读回 42 全过
+    - 单实例：`require.resolve` 从根与从 adapter 两个方向解析到**同一个文件**（`.pnpm/better-sqlite3@12.11.1/...`）
+    - 回归（`pnpm dev:proxy`，真实 dev server）：
+      - 邮箱验证码登录（写库）：发码 200 → 日志取码 → verify 200 → DB `users` 新增
+        `t007-verify@example.com` 且 `email_verified` 已写；同码复用 400；60 秒内重发 429
+      - `/settings` 读库 + 真实 Bangumi API：登录 `p004-real@example.com` → 页面渲染
+        `MegumiKT` / `@894485` / `收藏总数 317 条`
+      - 解绑：`POST /api/auth/bangumi/unbind` → 303 `/settings?bgm=unbound`，页面回到未绑定态、
+        DB `accounts` 中 bangumi 行数 1 → 0（`deleteMany` 生效，缓存未串）
+      - 绑定数据已用备份还原（事务内"先删同用户旧行、再写入"，即 `bindBangumiAccount` 的 SQL 语义），
+        还原后 `/settings` 再次读到 `MegumiKT` / 317 条
+    - `pnpm build` exit 0（9 条路由照常产出）、`pnpm lint` exit 0（仅 `next lint` 弃用告警，见 T-002）
+  - **仍未覆盖（需人工）**：`bindBangumiAccount` 里 `prisma.$transaction([deleteMany, upsert])` 这一条
+    真实路径，要有一次**真实 Bangumi 授权回调**才能跑到 —— OAuth 授权码必须由人在浏览器点「同意授权」，
+    无法脚本化。按 D-015 的既有实测（P0-04 收尾）该校验已通过一次，本次只换了 better-sqlite3 版本，
+    adapter 与 Prisma 版本未变；重绑请在浏览器走一遍 `设置 → 绑定 Bangumi → 同意`，预期落回
+    `/settings?bgm=ok` 并显示 `MegumiKT` / 317 条。
+
 ## 已知问题 / 技术债
 
 | 编号 | 问题 | 影响 | 计划 |
 |---|---|---|---|
 | T-001 | 本机沙箱下 `pnpm install / build / lint / dev` 会被拦（pnpm store 在工作区外；Next 构建要派生子进程，受限模式报 `spawn EPERM`），需以完全权限运行 | 每轮验收都得在完全权限下跑 | 长期：把 pnpm store 收进工作区或调整沙箱策略 |
 | T-002 | `next lint` 在 Next 16 会被移除 | 升级 Next 前必须迁移到 ESLint CLI | 升 Next 16 前处理 |
-| T-003 | pnpm 12 已不再读 `onlyBuiltDependencies`，改用 `allowBuilds`（`pnpm approve-builds` 写入）；P0-01 配置的 `unrs-resolver` 条目在本次 approve-builds 重写时被移除 | 若某依赖将来需要构建脚本，会出现 `ERR_PNPM_IGNORED_BUILDS` | 下轮若再撞到，把对应包名补进 `allowBuilds` |
+| T-003 | pnpm 12 已不再读 `onlyBuiltDependencies`，改用 `allowBuilds`（`pnpm approve-builds` 写入；pnpm 11 起旧字段被静默忽略）；P0-01 配置的 `unrs-resolver` 条目曾被 approve-builds 重写时移除 | 未列入白名单的构建脚本会让 `pnpm install` 以 `ERR_PNPM_IGNORED_BUILDS` 退出 | **已按此机制处理两次**：T-007 全量重装时 `unrs-resolver` 报错，已写 `unrs-resolver: false`（它的 `.node` 走 `optionalDependencies`，不需要跑脚本）；以后再撞到，同样用 `allowBuilds` 补 `true`/`false` |
 | T-004 | `prisma init` 会额外生成 `.agents/skills/`、`.claude/skills/`、`.windsurf/skills/` 与 `skills-lock.json`（Prisma 官方 AI 指南，约 300KB） | 仓库多出非任务要求的生成物 | 已随本轮提交；若嫌冗余，后续可删并靠 `prisma skills sync` 重建 |
 | T-005 | Prisma 7 SQL 路径强制要求 driver adapter；任务卡 P0-02 给的 `new PrismaClient()` 旧写法不适用 | 后续建 client 一律走 `src/lib/db.ts` 的 `prisma` 导出 | 已在 `DECISIONS.md` 记录 |
 | T-006 | 本轮刻意删改已提交的迁移（`20261025091017_init` → `20261025092643_init`，见 D-012） | 其他机器/分支上残留的旧 `prisma/dev.db` 会与迁移记录不匹配 | 换机器时删掉 `prisma/dev.db` 后跑 `pnpm db:migrate` 重建；从此迁移文件只追加不改写 |
-| T-007 | `better-sqlite3` 双版本：项目根是 13.0.3（**未编译出原生 binding**），`@prisma/adapter-better-sqlite3` 内嵌的 12.11.1 才有 `better_sqlite3.node` | 去掉 `next.config.ts` 的 `serverExternalPackages` 后，dev 下任何 DB 调用都报 `Could not locate the bindings file` | 根治：把 `better-sqlite3` 固定到 12.11.1（或 pnpm overrides 统一），再移除 workaround 复测 |
+| T-007 | `better-sqlite3` 双版本（根 `^13.0.3` vs adapter `dependencies` 里的 `^12.6.0`）：13.0.3 走的 `prebuilds/` 布局**本来就不产出 `build/Release/*.node`**，之前"没编译出二进制"是误判 | 顶层 13.0.3 实际是死依赖，全仓库靠 adapter 内嵌的 12.11.1 在跑；靠 pnpm 布局巧合成立 | **已解决**（2026-10-25）：`package.json` 写死 `"better-sqlite3": "12.11.1"`，`pnpm why` → `Found 1 version`，二进制 1,919,488 B、实测可 `require`；`serverExternalPackages` 经官方文档核实为**必需配置**，保留（D-017 / D-018） |
 | T-008 | 本地没有 `RESEND_API_KEY`：开发环境改为"跳过真实发信、把验证码打到服务端日志"，生产仍缺 key 即报错 | **登录链路已端到端验证**（2026-10-25 用 ofdgcdb784@do2.online 实测 8 项全过：发码 200 且响应不含码 / 60 秒内重发 429 带 Retry-After / 正确码 200 且 Set-Cookie 含会话 / `/me` 200 显示该邮箱 / 同码复用 400 / 5 次错码后真码作废 400 / signout 302 后 `/me` 307 跳 `/login`；DB 中 `code_hash` 为 32hex:64hex 无明文、`users.email_verified` 已写入）；**真实邮件投递仍未验证**，手机真机未验证 | 要真测投递时把 key 写进 `.env.local`，先用 `onboarding@resend.dev` 发给自己的注册邮箱 |
 | T-009 | 发码限流是进程内 `Map` | 多实例部署时每个实例各限各的，等于放宽上限 | P0 单实例够用；上多实例前换 Redis 或数据库计数 |
 | T-010 | Bangumi `access_token` 有效期只有 7 天，本轮**不实现自动刷新**（`refresh_token` / `expires_at` 已存库） | 绑定 7 天后设置页会提示「授权已过期，请重新绑定」，用户每 7 天要重新授权一次 | 接 P2-01 收藏同步时一并做 `grant_type=refresh_token`，在该端点同域名下续期并回写 |

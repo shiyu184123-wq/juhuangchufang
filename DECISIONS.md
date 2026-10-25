@@ -75,7 +75,7 @@
 
 - **决策**：`pnpm-workspace.yaml` 用 `allowBuilds`（`prisma` / `@prisma/engines` / `better-sqlite3`）。
 - **为什么**：pnpm 11+ 弃用 `onlyBuiltDependencies`，只认 `allowBuilds`；Prisma engines 与 better-sqlite3 原生模块依赖 postinstall。
-- **影响**：P0-01 的 `unrs-resolver` 条目在 approve-builds 重写时被移除（PROGRESS T-003）。
+- **影响**：P0-01 的 `unrs-resolver` 条目在 approve-builds 重写时被移除（PROGRESS T-003）；T-007 全量重装时它再次触发 `ERR_PNPM_IGNORED_BUILDS`，现以 `unrs-resolver: false` 显式拒绝（`false` 也算"已决策"，其 `.node` 由 `optionalDependencies` 直接分发，不需要跑 postinstall）。
 
 ## D-012 · 2026 · 数据库物理命名统一 snake_case（含迁移重置）
 
@@ -199,6 +199,44 @@
 - **影响**：只有本地 dev 需要代理，生产服务器直连 `bgm.tv` 不受影响；
   `scripts/dev.ps1` 以 UTF-8 **带 BOM** 保存，否则 Windows PowerShell 5.1 会把中文提示读成乱码；
   系统没设代理时脚本原样 `pnpm dev`，不改变直连行为。
+
+## D-017 · 2026 · `better-sqlite3` 钉死 12.11.1，随 adapter 走、不单独升大版本
+
+- **决策**：`package.json` 写 `"better-sqlite3": "12.11.1"`（精确版本，不带 `^` / `~`），
+  与 `@prisma/adapter-better-sqlite3@7.10.1` 声明的 `^12.6.0` 对齐；全仓库只允许存在一个 better-sqlite3。
+- **为什么**：
+  - adapter 把 better-sqlite3 放在 **`dependencies`**（不是 `peerDependencies`）里，pnpm 会为它单独装一份；
+    根依赖只要填了另一个大版本，就必然双份共存（T-007 的实况：13.0.3 + 12.11.1）。
+  - 业务代码从不直接 `import "better-sqlite3"`（`src/lib/db.ts` 只用 `PrismaBetterSqlite3({ url })`），
+    所以根依赖的版本对运行时没有正向作用，只会制造"哪份在被加载"的不确定性。
+  - 13.x 不是"更好的版本"而是**换了发行模型**：`gypfile: false`、无 `install` 脚本、二进制以
+    `prebuilds/<platform>.node` 随包发布（`engines.node: ">=22"`）。adapter 的 `^12.6.0` 明确不接受 13.x，
+    硬升等于替 adapter 做未验证的兼容性押注。
+- **替代**：
+  - `pnpm.overrides` 把 adapter 的 12 强行提到 13 —— 跨大版本 API 未经 adapter 验证，风险最高，否决。
+  - 方案 B「让 13.0.3 能装出二进制」—— 前提就不成立：13.x 不跑构建脚本，把它加进白名单也没有任何效果。
+  - 干脆删掉根依赖、只留 adapter 传递的那份 —— 版本会变成"由 adapter 的 semver 范围决定"，静默漂移更难察觉；
+    显式写死反而把"我们用哪个版本"钉在明面上。
+- **影响**：升级 `@prisma/adapter-better-sqlite3` 时，必须同时检查它声明的 better-sqlite3 范围，
+  然后把根依赖一起改到同一版本；`pnpm why better-sqlite3` 出现两种版本即视为回归。
+
+## D-018 · 2026 · `serverExternalPackages` 是原生模块的必需配置，不是 workaround（不要删）
+
+- **决策**：保留 `next.config.ts` 的 `serverExternalPackages: ["better-sqlite3", "@prisma/adapter-better-sqlite3"]`，
+  并把注释改写成"必需配置 + 理由"，防止后来者把它当临时兜底删掉。
+- **为什么（依据官方文档，不凭直觉）**：
+  - Next.js 15 官方文档 *serverExternalPackages*：Server Components / Route Handlers 里的依赖默认会被打包；
+    使用 Node.js 专有能力的依赖可以 opt-out、改由 Node 原生 `require` 解析。原生 `.node` 模块正是这一类。
+  - 本机 `next@15.5.28` 的 `dist/lib/server-external-packages.json` 里**已经有** `better-sqlite3` 与 `@prisma/client`，
+    但**没有** `@prisma/adapter-better-sqlite3`。
+  - 该 adapter 需要在运行时沿 better-sqlite3 的 `require` 路径找 `.node`（12.x 是 `build/Release/`，
+    13.x 是 `prebuilds/`）；一旦被打包，`__dirname` 与相对路径被重写到 `.next/`，
+    结果就是 `Could not locate the bindings file`。
+  - 技术债条目里"移除 workaround 复测"这句**是错的**，已在 PROGRESS T-007 中纠正并留档。
+- **替代**：只列 `@prisma/adapter-better-sqlite3`（依赖 Next 内置列表覆盖 better-sqlite3）—— 能跑，
+  但内置列表随 Next 版本增删，升 Next 时可能悄悄失效；两个都显式列出成本为零。
+- **影响**：只要项目还用 SQLite + 原生 driver，这条配置就不能删；挑选 Native 模块新增依赖时，
+  需同样评估是否要加入此列表。
 
 ---
 
