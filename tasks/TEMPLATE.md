@@ -36,9 +36,10 @@
 **命令**
 
 ```powershell
-pnpm build
-pnpm lint
+pwsh -File .\scripts\check.ps1
 ```
+
+脚本内部已包含 `pnpm build` / `pnpm lint` / `pnpm test`（有 test 时）；需要单独排查某一步时再手动分别跑。
 
 **手测**
 

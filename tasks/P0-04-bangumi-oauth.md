@@ -85,7 +85,7 @@ pwsh -File .\scripts\check.ps1
 
 - 上述全部通过
 - 在 `DECISIONS.md` 追加一条：Bangumi 端点核实结果与版本日期
-- `PROGRESS.md` 更新为 4/7
+- `PROGRESS.md` 更新为 4/6
 - git commit
 
 ## 给 AI 的备注

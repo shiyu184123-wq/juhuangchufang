@@ -68,7 +68,7 @@ pwsh -File .\scripts\check.ps1
 ## 完成定义
 
 - 上述全部通过
-- `PROGRESS.md` 更新为 5/7
+- `PROGRESS.md` 更新为 5/6
 - git commit
 
 ## 给 AI 的备注
