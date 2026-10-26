@@ -21,7 +21,7 @@
   `viewport-fit=cover`、`dvh` 高度、横向不溢出、触控区 ≥ 44px、键盘焦点可见、深色模式最小可读
   （深色对比度已于 `5e40aab` 补完）。**未做配色/排版设计**；另有三处基线一致性微调
   （首页 `gap`/`padding`/`max-w-sm` 的尺寸、`/me` 按钮文字色、`/settings` 用户名颜色），见审核记录。
-  2026-10-25 **真机六项验收通过**：荣耀（Android / MagicOS）+ 微信内置浏览器，经 cloudflared 隧道逐项人工验证（详见 T-012）
+  2026-10-26 **真机六项验收通过**：荣耀（Android / MagicOS）+ 微信内置浏览器，经 cloudflared 隧道逐项人工验证（详见 T-012）
 - **下一个**：P0-06 部署（`tasks/P0-06-deploy.md`）
 - **阻塞项**：只剩 T-010（Bangumi token 7 天过期需重新授权，未做自动刷新）。
   本地起 dev 请用 `pnpm dev:proxy`（否则 Node 直连 bgm.tv 必失败，见 D-016）；`.env.local` 三项凭据已配好
@@ -233,12 +233,12 @@
     两处改为语义变量 `text-foreground`（深色 #ededed → **16.91:1**，浅色 #171717 → **17.93:1**），不改配色、不加 `dark:` 成对类名。
     全仓库 `text-neutral-700/800/900` 已归零（`grep` 复核 0 处）；`text-neutral-500` **保留**（深色 4.18:1，刻意的次要层级，提亮会让层级消失）。
     另补 `page.tsx` 的文件末尾换行。对比度为 WCAG 公式计算值 + 渲染层 class 复核，**未做浏览器目视截图**（agent 无法操作浏览器）
-  - **真机六项验收（2026-10-25，结论：已通过）**：设备 = **荣耀（Android / MagicOS）**，浏览器 = **微信内置浏览器**（具体型号与系统版本号未记录）。
+  - **真机六项验收（2026-10-26，结论：已通过）**：设备 = **荣耀（Android / MagicOS）**，浏览器 = **微信内置浏览器**（具体型号与系统版本号未记录）。
     因校园网隔离 + 防火墙 Block 入站两条走不通局域网直连（原因见下），改用 **cloudflared 快速隧道**（`AUTH_TRUST_HOST=true` + `--protocol http2`，
     公网 HTTPS，手机走隧道域名），用 `p004-real@example.com` 登录后逐项人工验收 —— ① 三页无横向滚动 ✅ ② 底部导航完整可见、未被系统手势条遮挡 ✅
     ③ 按钮一次点中（「开始」「设置」「退出登录」「绑定 Bangumi」）✅ ④ 正文字号可读 ✅ ⑤ 横屏不崩、底栏仍在底部 ✅
     ⑥ 深色模式文字清晰、当前页高亮可辨 ✅。**六项全过，T-012 关闭**。附：`/settings` 首屏约 5 秒（实时调 Bangumi API 所致，非卡死）
-  - **为什么局域网直连验不成（2026-10-25，保留给后来者）**：两个独立障碍 ——
+  - **为什么局域网直连验不成（2026-10-26，保留给后来者）**：两个独立障碍 ——
     1. **防火墙全局 Block 入站**：`codex_sandbox_offline_block_inbound`（Enabled / Inbound / Block / Profile=Any / Program=Any / Port=Any，
        `RemoteAddress` 排除 `127.x`）除回环外一律丢包，Block 优先于那两条 `Node.js JavaScript Runtime` Allow 规则。
        所以电脑 `localhost:3000` 能开、手机不能；**「本机用局域网 IP 访问返回 200」也是回环，不能当作外部可达的证据**
@@ -258,11 +258,11 @@
 | T-005 | Prisma 7 SQL 路径强制要求 driver adapter；任务卡 P0-02 给的 `new PrismaClient()` 旧写法不适用 | 后续建 client 一律走 `src/lib/db.ts` 的 `prisma` 导出 | 已在 `DECISIONS.md` 记录 |
 | T-006 | 本轮刻意删改已提交的迁移（`20261025091017_init` → `20261025092643_init`，见 D-012） | 其他机器/分支上残留的旧 `prisma/dev.db` 会与迁移记录不匹配 | 换机器时删掉 `prisma/dev.db` 后跑 `pnpm db:migrate` 重建；从此迁移文件只追加不改写 |
 | T-007 | `better-sqlite3` 双版本（根 `^13.0.3` vs adapter `dependencies` 里的 `^12.6.0`）：13.0.3 走的 `prebuilds/` 布局**本来就不产出 `build/Release/*.node`**，之前"没编译出二进制"是误判 | 顶层 13.0.3 实际是死依赖，全仓库靠 adapter 内嵌的 12.11.1 在跑；靠 pnpm 布局巧合成立 | **已解决**（2026-10-25）：`package.json` 写死 `"better-sqlite3": "12.11.1"`，`pnpm why` → `Found 1 version`，二进制 1,919,488 B、实测可 `require`；`serverExternalPackages` 经官方文档核实为**必需配置**，保留（D-017 / D-018） |
-| T-008 | 本地没有 `RESEND_API_KEY`：开发环境改为"跳过真实发信、把验证码打到服务端日志"，生产仍缺 key 即报错 | **登录链路已端到端验证**（2026-10-25 用 ofdgcdb784@do2.online 实测 8 项全过：发码 200 且响应不含码 / 60 秒内重发 429 带 Retry-After / 正确码 200 且 Set-Cookie 含会话 / `/me` 200 显示该邮箱 / 同码复用 400 / 5 次错码后真码作废 400 / signout 302 后 `/me` 307 跳 `/login`；DB 中 `code_hash` 为 32hex:64hex 无明文、`users.email_verified` 已写入）；**真实邮件投递仍未验证**；手机端完整登录已于 2026-10-25 验证（荣耀 + 微信浏览器，经 cloudflared 隧道，仍用日志取码） | 要真测投递时把 key 写进 `.env.local`，先用 `onboarding@resend.dev` 发给自己的注册邮箱 |
+| T-008 | 本地没有 `RESEND_API_KEY`：开发环境改为"跳过真实发信、把验证码打到服务端日志"，生产仍缺 key 即报错 | **登录链路已端到端验证**（2026-10-25 用 ofdgcdb784@do2.online 实测 8 项全过：发码 200 且响应不含码 / 60 秒内重发 429 带 Retry-After / 正确码 200 且 Set-Cookie 含会话 / `/me` 200 显示该邮箱 / 同码复用 400 / 5 次错码后真码作废 400 / signout 302 后 `/me` 307 跳 `/login`；DB 中 `code_hash` 为 32hex:64hex 无明文、`users.email_verified` 已写入）；**真实邮件投递仍未验证**；手机端完整登录已于 2026-10-26 验证（荣耀 + 微信浏览器，经 cloudflared 隧道，仍用日志取码） | 要真测投递时把 key 写进 `.env.local`，先用 `onboarding@resend.dev` 发给自己的注册邮箱 |
 | T-009 | 发码限流是进程内 `Map` | 多实例部署时每个实例各限各的，等于放宽上限 | P0 单实例够用；上多实例前换 Redis 或数据库计数 |
 | T-010 | Bangumi `access_token` 有效期只有 7 天，本轮**不实现自动刷新**（`refresh_token` / `expires_at` 已存库） | 绑定 7 天后设置页会提示「授权已过期，请重新绑定」，用户每 7 天要重新授权一次 | 接 P2-01 收藏同步时一并做 `grant_type=refresh_token`，在该端点同域名下续期并回写 |
 | T-011 | Node 的 fetch 不读 Windows 系统代理，Node 24 需 `NODE_USE_ENV_PROXY=1` + `HTTPS_PROXY` 才走代理，否则直连 bgm.tv 拿到被污染 DNS 结果并超时 | 本地 dev 必须带代理启动，否则绑定必失败 | **已解决**：`scripts/dev.ps1` 自动读系统代理并设置；生产服务器能直连，不受影响（见 D-016） |
-| T-012 | **P0-05 的移动端验收没在真机上做过**（2026-10-25 首次尝试因校园网隔离 + 防火墙 Block 入站未成，原因见 P0-05 段末） | **已解决**（2026-10-25）：荣耀（Android / MagicOS）+ 微信内置浏览器，经 cloudflared 快速隧道逐项人工验收，**六项全过**——① 三页无横向滚动 ② 底部导航完整可见、未被系统手势条遮挡 ③ 按钮一次点中 ④ 正文字号可读 ⑤ 横屏不崩、底栏仍在底部 ⑥ 深色模式文字清晰、当前页高亮可辨 | 无遗留。手机具体型号与 MagicOS 版本号未记录；`/settings` 首屏约 5 秒（实时调 Bangumi API），已记入性能观察 |
+| T-012 | **P0-05 的移动端验收没在真机上做过**（2026-10-26 首次尝试因校园网隔离 + 防火墙 Block 入站未成，原因见 P0-05 段末） | **已解决**（2026-10-26）：荣耀（Android / MagicOS）+ 微信内置浏览器，经 cloudflared 快速隧道逐项人工验收，**六项全过**——① 三页无横向滚动 ② 底部导航完整可见、未被系统手势条遮挡 ③ 按钮一次点中 ④ 正文字号可读 ⑤ 横屏不崩、底栏仍在底部 ⑥ 深色模式文字清晰、当前页高亮可辨 | 无遗留。手机具体型号与 MagicOS 版本号未记录；`/settings` 首屏约 5 秒（实时调 Bangumi API），已记入性能观察 |
 
 ## 关键指标（自己填，用来判断是否该继续投）
 
