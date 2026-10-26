@@ -7,7 +7,9 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
+  // P0-06 起线上使用 Neon 托管的 Postgres（见 DECISIONS D-018）。
+  // 本地 dev 也连接同一套 Neon 库（任务卡 P0-06 步骤 3），不再使用 prisma/dev.db。
+  provider = "postgresql"
 }
 
 // ---------------------------------------------------------------------------
