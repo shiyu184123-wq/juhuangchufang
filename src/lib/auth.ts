@@ -20,6 +20,9 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   // 所以这里显式声明 jwt：登录态只存在于签名 cookie 里，sessions 表不参与登录。
   // 为什么不用 database session / PrismaAdapter 见 DECISIONS D-014。
   session: { strategy: "jwt" },
+  // 部署在 Netlify（非 Vercel）时必须显式信任请求 Host：Auth.js v5 只在 Vercel 上自动信任，
+  // 否则 /api/auth/* 一律 500（UntrustedHost）。环境变量 AUTH_TRUST_HOST 也可，但在代码里固定更可靠。
+  trustHost: true,
   pages: { signIn: "/login" },
   providers: [
     Credentials({
